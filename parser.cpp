@@ -56,6 +56,20 @@ std::unique_ptr<Statement> parse_statement(const std::string& sql) {
                 // Further parsing for WHERE clause will go here
             }
         }
+    } else if (to_upper(token) == "UPDATE") {
+        ss >> token; // table_name
+        statement->type = STATEMENT_UPDATE;
+        statement->update_statement = std::make_unique<UpdateStatement>();
+        statement->update_statement->table_name = token;
+
+        ss >> token; // Expecting "SET"
+        if (to_upper(token) == "SET") {
+            // For now, just consume the rest of the line as set_clauses and where_clause
+            std::string remaining_sql;
+            std::getline(ss, remaining_sql);
+            remaining_sql.erase(0, remaining_sql.find_first_not_of(" \t\n\r\f\v"));
+            statement->update_statement->set_clauses.push_back({"raw_set_clause", remaining_sql});
+        }
     }
 
     return statement;

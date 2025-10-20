@@ -38,11 +38,18 @@ struct SelectStatement {
     std::string where_clause; // Placeholder for now
 };
 
+struct UpdateStatement {
+    std::string table_name;
+    std::vector<std::pair<std::string, std::string>> set_clauses; // e.g., {{"column", "value"}}
+    std::string where_clause; // Placeholder for now
+};
+
 struct Statement {
     StatementType type;
     std::unique_ptr<CreateTableStatement> create_table_statement;
     std::unique_ptr<InsertStatement> insert_statement;
     std::unique_ptr<SelectStatement> select_statement;
+    std::unique_ptr<UpdateStatement> update_statement;
     // Add more unique_ptrs for other statement types as needed
 };
 

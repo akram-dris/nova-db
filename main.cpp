@@ -38,6 +38,12 @@ int main() {
                 std::cout << std::endl;
             } else if (statement->type == STATEMENT_SELECT) {
                 std::cout << "Parsed SELECT statement for table: " << statement->select_statement->table_name << std::endl;
+            } else if (statement->type == STATEMENT_UPDATE) {
+                std::cout << "Parsed UPDATE statement for table: " << statement->update_statement->table_name << ", SET clause: ";
+                for (const auto& set_pair : statement->update_statement->set_clauses) {
+                    std::cout << set_pair.second << " ";
+                }
+                std::cout << std::endl;
             } else {
                 std::cout << "Unrecognized command or SQL statement: " << input_line << std::endl;
             }
