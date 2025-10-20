@@ -1,6 +1,7 @@
 #include <iostream>
 #include <string>
 #include <fstream>
+#include "parser.h"
 
 void print_prompt() {
     std::cout << "nova> ";
@@ -23,7 +24,13 @@ int main() {
             std::cout << "Goodbye from NovaDB." << std::endl;
             break;
         } else {
-            std::cout << "Unrecognized command: " << input_line << std::endl;
+            // Attempt to parse SQL statement
+            auto statement = parse_statement(input_line);
+            if (statement->type == STATEMENT_UNKNOWN) {
+                std::cout << "Unrecognized command or SQL statement: " << input_line << std::endl;
+            } else {
+                std::cout << "Parsed statement type: " << statement->type << std::endl;
+            }
         }
     }
 
