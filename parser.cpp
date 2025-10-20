@@ -1,4 +1,5 @@
 #include "parser.h"
+#include "serializer.h" // For deserialize_int
 #include <iostream>
 #include <sstream>
 #include <algorithm>
@@ -31,6 +32,15 @@ ColumnType string_to_column_type(const std::string& type_str) {
     }
 }
 
+std::string column_type_to_string(ColumnType type) {
+    switch (type) {
+        case COLUMN_TYPE_INT: return "INT";
+        case COLUMN_TYPE_TEXT: return "TEXT";
+        case COLUMN_TYPE_UNKNOWN: return "UNKNOWN";
+    }
+    return "UNKNOWN"; // Should not be reached
+}
+
 std::unique_ptr<Statement> parse_statement(const std::string& sql) {
     std::cout << "Parsing SQL: " << sql << std::endl;
     auto statement = std::make_unique<Statement>();
@@ -52,6 +62,12 @@ std::unique_ptr<Statement> parse_statement(const std::string& sql) {
             std::string remaining_sql;
             std::getline(ss, remaining_sql); // Get the rest of the line
             remaining_sql = trim(remaining_sql);
+
+            // Remove trailing semicolon if present
+            if (!remaining_sql.empty() && remaining_sql.back() == ';') {
+                remaining_sql.pop_back();
+                remaining_sql = trim(remaining_sql);
+            }
 
             if (remaining_sql.length() > 2 && remaining_sql.front() == '(' && remaining_sql.back() == ')') {
                 std::string columns_str = remaining_sql.substr(1, remaining_sql.length() - 2);
@@ -81,13 +97,32 @@ std::unique_ptr<Statement> parse_statement(const std::string& sql) {
             statement->insert_statement = std::make_unique<InsertStatement>();
             statement->insert_statement->table_name = token;
 
-            // For now, just consume the rest of the line as values
+            // Parse values (e.g., (value1, value2, ...))
             std::string remaining_sql;
-            std::getline(ss, remaining_sql);
-            // Trim leading whitespace
-            remaining_sql.erase(0, remaining_sql.find_first_not_of(" \t\n\r\f\v"));
-            if (to_upper(remaining_sql.substr(0, 6)) == "VALUES") {
-                statement->insert_statement->values.push_back(remaining_sql.substr(6));
+            std::getline(ss, remaining_sql); // Get the rest of the line
+            remaining_sql = trim(remaining_sql);
+
+            // Remove trailing semicolon if present
+            if (!remaining_sql.empty() && remaining_sql.back() == ';') {
+                remaining_sql.pop_back();
+                remaining_sql = trim(remaining_sql);
+            }
+
+            // Expecting VALUES (val1, val2, ...)
+            size_t values_pos = to_upper(remaining_sql).find("VALUES");
+            if (values_pos != std::string::npos) {
+                std::string values_part = remaining_sql.substr(values_pos + 6); // Skip "VALUES"
+                values_part = trim(values_part);
+
+                if (values_part.length() > 2 && values_part.front() == '(' && values_part.back() == ')') {
+                    std::string actual_values_str = values_part.substr(1, values_part.length() - 2);
+                    std::stringstream vals_ss(actual_values_str);
+                    std::string val_token;
+
+                    while (std::getline(vals_ss, val_token, ',')) {
+                        statement->insert_statement->values.push_back(trim(val_token));
+                    }
+                }
             }
         }
     } else if (to_upper(token) == "SELECT") {

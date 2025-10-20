@@ -97,3 +97,44 @@ std::unique_ptr<CreateTableStatement> deserialize_create_table_statement(const s
     }
     return stmt;
 }
+
+// --- Value Serialization ---
+void serialize_value(std::vector<char>& buffer, size_t& offset, ColumnType type, const std::string& value_str) {
+    switch (type) {
+        case COLUMN_TYPE_INT: {
+            try {
+                int32_t val = std::stoi(value_str);
+                serialize_int(buffer, offset, val);
+            } catch (const std::exception& e) {
+                throw std::runtime_error("Invalid INT value: " + value_str);
+            }
+            break;
+        }
+        case COLUMN_TYPE_TEXT: {
+            // Remove surrounding quotes if present
+            std::string cleaned_str = value_str;
+            if (cleaned_str.length() >= 2 && cleaned_str.front() == '\'' && cleaned_str.back() == '\'') {
+                cleaned_str = cleaned_str.substr(1, cleaned_str.length() - 2);
+            }
+            serialize_string(buffer, offset, cleaned_str);
+            break;
+        }
+        case COLUMN_TYPE_UNKNOWN:
+            throw std::runtime_error("Cannot serialize UNKNOWN column type");
+    }
+}
+
+std::string deserialize_value(const std::vector<char>& buffer, size_t& offset, ColumnType type) {
+    switch (type) {
+        case COLUMN_TYPE_INT: {
+            int32_t val = deserialize_int(buffer, offset);
+            return std::to_string(val);
+        }
+        case COLUMN_TYPE_TEXT: {
+            return deserialize_string(buffer, offset);
+        }
+        case COLUMN_TYPE_UNKNOWN:
+            throw std::runtime_error("Cannot deserialize UNKNOWN column type");
+    }
+    return ""; // Should not be reached
+}

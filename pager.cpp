@@ -6,10 +6,10 @@ namespace fs = std::filesystem;
 
 Pager::Pager(const std::string& filename) : filename_(filename), num_pages_(0) {
     // Open the file in binary mode for reading and writing
-    file_stream_.open(filename_, std::ios::in | std::ios::out | std::ios::binary | std::ios::app);
+    file_stream_.open(filename_, std::ios::in | std::ios::out | std::ios::binary);
 
-    // If file doesn't exist, create it
     if (!file_stream_.is_open()) {
+        // If file didn't exist, create it with trunc
         file_stream_.open(filename_, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
         if (!file_stream_.is_open()) {
             throw std::runtime_error("Could not open or create database file: " + filename_);

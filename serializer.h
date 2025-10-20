@@ -25,4 +25,8 @@ ColumnDefinition deserialize_column_definition(const std::vector<char>& buffer, 
 void serialize_create_table_statement(std::vector<char>& buffer, size_t& offset, const CreateTableStatement& stmt);
 std::unique_ptr<CreateTableStatement> deserialize_create_table_statement(const std::vector<char>& buffer, size_t& offset);
 
+// Value serialization
+void serialize_value(std::vector<char>& buffer, size_t& offset, ColumnType type, const std::string& value_str);
+std::string deserialize_value(const std::vector<char>& buffer, size_t& offset, ColumnType type);
+
 #endif //NOVADB_SERIALIZER_H

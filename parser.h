@@ -23,6 +23,8 @@ enum ColumnType {
     COLUMN_TYPE_UNKNOWN
 };
 
+std::string column_type_to_string(ColumnType type);
+
 struct ColumnDefinition {
     std::string name;
     ColumnType type;
