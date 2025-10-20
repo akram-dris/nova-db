@@ -28,9 +28,15 @@ struct CreateTableStatement {
     std::vector<ColumnDefinition> columns;
 };
 
+struct InsertStatement {
+    std::string table_name;
+    std::vector<std::string> values;
+};
+
 struct Statement {
     StatementType type;
     std::unique_ptr<CreateTableStatement> create_table_statement;
+    std::unique_ptr<InsertStatement> insert_statement;
     // Add more unique_ptrs for other statement types as needed
 };
 

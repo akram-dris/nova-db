@@ -30,8 +30,14 @@ int main() {
                 std::cout << "Unrecognized command or SQL statement: " << input_line << std::endl;
             } else if (statement->type == STATEMENT_CREATE_TABLE) {
                 std::cout << "Parsed CREATE TABLE statement for table: " << statement->create_table_statement->table_name << std::endl;
+            } else if (statement->type == STATEMENT_INSERT) {
+                std::cout << "Parsed INSERT statement for table: " << statement->insert_statement->table_name << ", values: ";
+                for (const auto& val : statement->insert_statement->values) {
+                    std::cout << val << " ";
+                }
+                std::cout << std::endl;
             } else {
-                std::cout << "Parsed statement type: " << statement->type << std::endl;
+                std::cout << "Unrecognized command or SQL statement: " << input_line << std::endl;
             }
         }
     }
