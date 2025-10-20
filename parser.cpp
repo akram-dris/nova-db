@@ -2,11 +2,33 @@
 #include <iostream>
 #include <sstream>
 #include <algorithm>
+#include <cctype>
 
 // Helper function to convert string to uppercase
 std::string to_upper(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(), ::toupper);
     return s;
+}
+
+// Helper function to trim whitespace
+std::string trim(const std::string& s) {
+    size_t first = s.find_first_not_of(" \t\n\r\f\v");
+    if (std::string::npos == first) {
+        return s;
+    }
+    size_t last = s.find_last_not_of(" \t\n\r\f\v");
+    return s.substr(first, (last - first + 1));
+}
+
+ColumnType string_to_column_type(const std::string& type_str) {
+    std::string upper_type = to_upper(type_str);
+    if (upper_type == "INT") {
+        return COLUMN_TYPE_INT;
+    } else if (upper_type == "TEXT") {
+        return COLUMN_TYPE_TEXT;
+    } else {
+        return COLUMN_TYPE_UNKNOWN;
+    }
 }
 
 std::unique_ptr<Statement> parse_statement(const std::string& sql) {
@@ -25,7 +47,31 @@ std::unique_ptr<Statement> parse_statement(const std::string& sql) {
             statement->type = STATEMENT_CREATE_TABLE;
             statement->create_table_statement = std::make_unique<CreateTableStatement>();
             statement->create_table_statement->table_name = token;
-            // Further parsing for columns will go here
+
+            // Parse column definitions (e.g., (id INT, name TEXT))
+            std::string remaining_sql;
+            std::getline(ss, remaining_sql); // Get the rest of the line
+            remaining_sql = trim(remaining_sql);
+
+            if (remaining_sql.length() > 2 && remaining_sql.front() == '(' && remaining_sql.back() == ')') {
+                std::string columns_str = remaining_sql.substr(1, remaining_sql.length() - 2);
+                std::stringstream cols_ss(columns_str);
+                std::string col_token;
+
+                while (std::getline(cols_ss, col_token, ',')) {
+                    std::stringstream col_def_ss(trim(col_token));
+                    std::string col_name;
+                    std::string col_type_str;
+                    col_def_ss >> col_name >> col_type_str;
+
+                    if (!col_name.empty() && !col_type_str.empty()) {
+                        ColumnDefinition col_def;
+                        col_def.name = col_name;
+                        col_def.type = string_to_column_type(col_type_str);
+                        statement->create_table_statement->columns.push_back(col_def);
+                    }
+                }
+            }
         }
     } else if (to_upper(token) == "INSERT") {
         ss >> token;

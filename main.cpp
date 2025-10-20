@@ -35,7 +35,11 @@ int main() {
             // Attempt to parse SQL statement
             auto statement = parse_statement(input_line);
             if (statement->type == STATEMENT_CREATE_TABLE) {
-                std::cout << "Parsed CREATE TABLE statement for table: " << statement->create_table_statement->table_name << std::endl;
+                std::cout << "Parsed CREATE TABLE statement for table: " << statement->create_table_statement->table_name << ", columns: ";
+                for (const auto& col : statement->create_table_statement->columns) {
+                    std::cout << col.name << " (" << col.type << ") ";
+                }
+                std::cout << std::endl;
             } else if (statement->type == STATEMENT_INSERT) {
                 std::cout << "Parsed INSERT statement for table: " << statement->insert_statement->table_name << ", values: ";
                 for (const auto& val : statement->insert_statement->values) {

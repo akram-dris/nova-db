@@ -17,9 +17,15 @@ enum StatementType {
     STATEMENT_UNKNOWN
 };
 
+enum ColumnType {
+    COLUMN_TYPE_INT,
+    COLUMN_TYPE_TEXT,
+    COLUMN_TYPE_UNKNOWN
+};
+
 struct ColumnDefinition {
     std::string name;
-    std::string type;
+    ColumnType type;
     // Add constraints like PRIMARY KEY, NOT NULL later
 };
 
