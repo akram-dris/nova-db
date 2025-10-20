@@ -1,6 +1,7 @@
 #include "serializer.h"
 #include <cstring> // For std::memcpy
 #include <stdexcept>
+#include <iostream> // For std::cout, std::endl
 
 // --- String Serialization ---
 void serialize_string(std::vector<char>& buffer, size_t& offset, const std::string& value) {
@@ -137,4 +138,61 @@ std::string deserialize_value(const std::vector<char>& buffer, size_t& offset, C
             throw std::runtime_error("Cannot deserialize UNKNOWN column type");
     }
     return ""; // Should not be reached
+}
+
+// --- BTreeNode Serialization ---
+void serialize_btree_node(std::vector<char>& buffer, size_t& offset, const BTreeNode& node) {
+    // Serialize is_leaf
+    serialize_int(buffer, offset, node.is_leaf ? 1 : 0);
+
+    // Serialize parent
+    serialize_int(buffer, offset, node.parent);
+
+    // Serialize keys
+    serialize_int(buffer, offset, node.keys.size());
+    for (const auto& key : node.keys) {
+        serialize_string(buffer, offset, key);
+    }
+
+    // Serialize children (if not a leaf)
+    serialize_int(buffer, offset, node.children.size());
+    for (int child_page_num : node.children) {
+        serialize_int(buffer, offset, child_page_num);
+    }
+
+    // Serialize record_pointers (if a leaf)
+    serialize_int(buffer, offset, node.record_pointers.size());
+    for (int record_page_num : node.record_pointers) {
+        serialize_int(buffer, offset, record_page_num);
+    }
+}
+
+std::unique_ptr<BTreeNode> deserialize_btree_node(const std::vector<char>& buffer, size_t& offset) {
+    auto node = std::make_unique<BTreeNode>();
+
+    // Deserialize is_leaf
+    node->is_leaf = (deserialize_int(buffer, offset) == 1);
+
+    // Deserialize parent
+    node->parent = deserialize_int(buffer, offset);
+
+    // Deserialize keys
+    int num_keys = deserialize_int(buffer, offset);
+    for (int i = 0; i < num_keys; ++i) {
+        node->keys.push_back(deserialize_string(buffer, offset));
+    }
+
+    // Deserialize children
+    int num_children = deserialize_int(buffer, offset);
+    for (int i = 0; i < num_children; ++i) {
+        node->children.push_back(deserialize_int(buffer, offset));
+    }
+
+    // Deserialize record_pointers
+    int num_record_pointers = deserialize_int(buffer, offset);
+    for (int i = 0; i < num_record_pointers; ++i) {
+        node->record_pointers.push_back(deserialize_int(buffer, offset));
+    }
+
+    return node;
 }

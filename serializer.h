@@ -5,6 +5,7 @@
 #include <string>
 #include <cstdint>
 #include "parser.h" // For ColumnType, ColumnDefinition, CreateTableStatement
+#include "index.h" // For BTreeNode
 
 // Basic serialization functions
 void serialize_string(std::vector<char>& buffer, size_t& offset, const std::string& value);
@@ -28,5 +29,9 @@ std::unique_ptr<CreateTableStatement> deserialize_create_table_statement(const s
 // Value serialization
 void serialize_value(std::vector<char>& buffer, size_t& offset, ColumnType type, const std::string& value_str);
 std::string deserialize_value(const std::vector<char>& buffer, size_t& offset, ColumnType type);
+
+// BTreeNode serialization
+void serialize_btree_node(std::vector<char>& buffer, size_t& offset, const BTreeNode& node);
+std::unique_ptr<BTreeNode> deserialize_btree_node(const std::vector<char>& buffer, size_t& offset);
 
 #endif //NOVADB_SERIALIZER_H

@@ -8,6 +8,7 @@
 // Define page size (e.g., 4KB)
 const int PAGE_SIZE = 4096;
 const int METADATA_PAGE_NUM = 0;
+const int INDEX_ROOT_PAGE_NUM = 1; // Dedicated page for the index root
 
 class Pager {
 public:

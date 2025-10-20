@@ -5,11 +5,24 @@
 #include "parser.h"
 #include "pager.h"
 #include "serializer.h"
+#include "index.h" // Include index.h
 
-std::unique_ptr<Pager> current_pager = nullptr;
+std::shared_ptr<Pager> current_pager = nullptr;
+std::unique_ptr<Index> current_index = nullptr; // Add Index instance
 
 void print_prompt() {
     std::cout << "nova> ";
+}
+
+// Helper function to display a row
+void display_row(const std::vector<std::string>& row_values, const std::vector<ColumnDefinition>& columns) {
+    for (size_t i = 0; i < row_values.size(); ++i) {
+        std::cout << row_values[i];
+        if (i < row_values.size() - 1) {
+            std::cout << " | ";
+        }
+    }
+    std::cout << std::endl;
 }
 
 int main() {
@@ -24,7 +37,10 @@ int main() {
         if (input_line.rfind(".open", 0) == 0) {
             std::string filename = input_line.substr(6);
             try {
-                current_pager = std::make_unique<Pager>(filename);
+                current_pager = std::make_shared<Pager>(filename); // Use make_shared
+                // For now, assume index root is always page 0 (or some fixed page)
+                // If it's a new DB, root_page_num will be -1, and Index constructor will create it.
+                current_index = std::make_unique<Index>(current_pager, INDEX_ROOT_PAGE_NUM); // Use INDEX_ROOT_PAGE_NUM
                 std::cout << "Database '" << filename << "' opened successfully." << std::endl;
             } catch (const std::exception& e) {
                 std::cerr << "Error opening database: " << e.what() << std::endl;
@@ -204,6 +220,13 @@ int main() {
                     current_pager->write_page(page_to_write, record_page);
                     std::cout << "Record inserted into table '" << table_schema->table_name << "' on page " << page_to_write << "." << std::endl;
 
+                    // Insert into index (assuming first column is the primary key)
+                    if (current_index && !table_schema->columns.empty()) {
+                        const std::string& primary_key_value = statement->insert_statement->values[0];
+                        current_index->insert(primary_key_value, page_to_write);
+                        std::cout << "Inserted into index: key='" << primary_key_value << "', page=" << page_to_write << std::endl;
+                    }
+
                 } catch (const std::exception& e) {
                     std::cerr << "Error executing INSERT statement: " << e.what() << std::endl;
                 }
@@ -253,12 +276,24 @@ int main() {
                     }
                     std::cout << std::endl;
 
-                    // 3. Table Scan and Record Deserialization
-                    // Assuming records are stored one per page, starting from page 1 (after metadata page 0)
-                    for (int page_num = METADATA_PAGE_NUM + 1; page_num < current_pager->get_num_pages(); ++page_num) {
-                        std::vector<char> record_page = current_pager->read_page(page_num);
+                    // Check if index can be used
+                    int indexed_record_page_num = -1;
+                    bool use_index = false;
+                    if (current_index && statement->select_statement->where_condition &&
+                        statement->select_statement->where_condition->op == OP_EQ &&
+                        !table_schema->columns.empty() &&
+                        table_schema->columns[0].name == statement->select_statement->where_condition->column_name) {
 
-                        // Skip page if it's entirely zeros (heuristic for deleted records)
+                        indexed_record_page_num = current_index->search(statement->select_statement->where_condition->value);
+                        if (indexed_record_page_num != -1) {
+                            std::cout << "Using index for lookup. Found record on page: " << indexed_record_page_num << std::endl;
+                            use_index = true;
+                        }
+                    }
+
+                    if (use_index) { // Use index lookup
+                        std::vector<char> record_page = current_pager->read_page(indexed_record_page_num);
+
                         bool is_zero_page = true;
                         for (char c : record_page) {
                             if (c != 0) {
@@ -266,72 +301,79 @@ int main() {
                                 break;
                             }
                         }
-                        if (is_zero_page) {
-                            continue; // Skip this page, it's considered deleted
-                        }
-
-                        size_t record_read_offset = 0;
-
-                        std::vector<std::string> row_values;
-                        bool condition_met = true; // Assume true if no WHERE clause or condition is met
-
-                        // Deserialize all values for the current record
-                        for (size_t i = 0; i < table_schema->columns.size(); ++i) {
-                            const auto& col_def = table_schema->columns[i];
-                            row_values.push_back(deserialize_value(record_page, record_read_offset, col_def.type));
-                        }
-
-                        // Evaluate WHERE condition if present
-                        if (statement->select_statement->where_condition) {
-                            condition_met = false; // Reset to false, must be explicitly met
-
-                            const auto& wc = statement->select_statement->where_condition;
-                            int column_index = -1;
+                        if (!is_zero_page) { // Only display if not a zeroed page
+                            size_t record_read_offset = 0;
+                            std::vector<std::string> row_values;
                             for (size_t i = 0; i < table_schema->columns.size(); ++i) {
-                                if (table_schema->columns[i].name == wc->column_name) {
-                                    column_index = i;
+                                const auto& col_def = table_schema->columns[i];
+                                row_values.push_back(deserialize_value(record_page, record_read_offset, col_def.type));
+                            }
+                            display_row(row_values, table_schema->columns);
+                        }
+                    } else { // Full table scan
+                        for (int page_num = INDEX_ROOT_PAGE_NUM + 1; page_num < current_pager->get_num_pages(); ++page_num) {
+                            std::vector<char> record_page = current_pager->read_page(page_num);
+
+                            bool is_zero_page = true;
+                            for (char c : record_page) {
+                                if (c != 0) {
+                                    is_zero_page = false;
                                     break;
                                 }
                             }
+                            if (is_zero_page) {
+                                continue;
+                            }
 
-                            if (column_index != -1) {
-                                const auto& col_def = table_schema->columns[column_index];
-                                const std::string& record_value = row_values[column_index];
+                            size_t record_read_offset = 0;
+                            std::vector<std::string> row_values;
+                            for (size_t i = 0; i < table_schema->columns.size(); ++i) {
+                                const auto& col_def = table_schema->columns[i];
+                                row_values.push_back(deserialize_value(record_page, record_read_offset, col_def.type));
+                            }
 
-                                // For now, only handle OP_EQ
-                                if (wc->op == OP_EQ) {
-                                    if (col_def.type == COLUMN_TYPE_INT) {
-                                        try {
-                                            if (std::stoi(record_value) == std::stoi(wc->value)) {
+                            bool condition_met = true;
+                            if (statement->select_statement->where_condition) {
+                                condition_met = false;
+
+                                const auto& wc = statement->select_statement->where_condition;
+                                int column_index = -1;
+                                for (size_t i = 0; i < table_schema->columns.size(); ++i) {
+                                    if (table_schema->columns[i].name == wc->column_name) {
+                                        column_index = i;
+                                        break;
+                                    }
+                                }
+
+                                if (column_index != -1) {
+                                    const auto& col_def = table_schema->columns[column_index];
+                                    const std::string& record_value = row_values[column_index];
+
+                                    if (wc->op == OP_EQ) {
+                                        if (col_def.type == COLUMN_TYPE_INT) {
+                                            try {
+                                                if (std::stoi(record_value) == std::stoi(wc->value)) {
+                                                    condition_met = true;
+                                                }
+                                            } catch (const std::exception& e) {
+                                                std::cerr << "Warning: Type conversion error in WHERE clause for INT comparison: " << e.what() << std::endl;
+                                            }
+                                        } else if (col_def.type == COLUMN_TYPE_TEXT) {
+                                            std::string cleaned_wc_value = wc->value;
+                                            if (cleaned_wc_value.length() >= 2 && cleaned_wc_value.front() == '\'' && cleaned_wc_value.back() == '\'') {
+                                                cleaned_wc_value = cleaned_wc_value.substr(1, cleaned_wc_value.length() - 2);
+                                            }
+                                            if (record_value == cleaned_wc_value) {
                                                 condition_met = true;
                                             }
-                                        } catch (const std::exception& e) {
-                                            // Handle conversion error, e.g., log it
-                                            std::cerr << "Warning: Type conversion error in WHERE clause for INT comparison: " << e.what() << std::endl;
-                                        }
-                                    } else if (col_def.type == COLUMN_TYPE_TEXT) {
-                                        // Remove surrounding quotes from wc->value if present
-                                        std::string cleaned_wc_value = wc->value;
-                                        if (cleaned_wc_value.length() >= 2 && cleaned_wc_value.front() == '\'' && cleaned_wc_value.back() == '\'') {
-                                            cleaned_wc_value = cleaned_wc_value.substr(1, cleaned_wc_value.length() - 2);
-                                        }
-                                        if (record_value == cleaned_wc_value) {
-                                            condition_met = true;
                                         }
                                     }
                                 }
                             }
-                        }
 
-                        // 4. Display Results (only if condition met)
-                        if (condition_met) {
-                            for (size_t i = 0; i < row_values.size(); ++i) {
-                                std::cout << row_values[i];
-                                if (i < row_values.size() - 1) {
-                                    std::cout << " | ";
-                                }
+                            if (condition_met) {
+                                display_row(row_values, table_schema->columns);
                             }
-                            std::cout << std::endl;
                         }
                     }
 
