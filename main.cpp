@@ -28,6 +28,8 @@ int main() {
             auto statement = parse_statement(input_line);
             if (statement->type == STATEMENT_UNKNOWN) {
                 std::cout << "Unrecognized command or SQL statement: " << input_line << std::endl;
+            } else if (statement->type == STATEMENT_CREATE_TABLE) {
+                std::cout << "Parsed CREATE TABLE statement for table: " << statement->create_table_statement->table_name << std::endl;
             } else {
                 std::cout << "Parsed statement type: " << statement->type << std::endl;
             }

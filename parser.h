@@ -17,9 +17,21 @@ enum StatementType {
     STATEMENT_UNKNOWN
 };
 
+struct ColumnDefinition {
+    std::string name;
+    std::string type;
+    // Add constraints like PRIMARY KEY, NOT NULL later
+};
+
+struct CreateTableStatement {
+    std::string table_name;
+    std::vector<ColumnDefinition> columns;
+};
+
 struct Statement {
     StatementType type;
-    // Add more fields as needed for specific statement types
+    std::unique_ptr<CreateTableStatement> create_table_statement;
+    // Add more unique_ptrs for other statement types as needed
 };
 
 // Function to parse an SQL statement
