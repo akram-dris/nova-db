@@ -7,6 +7,7 @@
 
 // Define page size (e.g., 4KB)
 const int PAGE_SIZE = 4096;
+const int METADATA_PAGE_NUM = 0;
 
 class Pager {
 public:

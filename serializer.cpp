@@ -56,3 +56,44 @@ int32_t deserialize_int(const std::vector<char>& buffer, size_t& offset) {
     offset += sizeof(value);
     return value;
 }
+
+// --- ColumnType Serialization ---
+void serialize_column_type(std::vector<char>& buffer, size_t& offset, ColumnType type) {
+    serialize_int(buffer, offset, static_cast<int32_t>(type));
+}
+
+ColumnType deserialize_column_type(const std::vector<char>& buffer, size_t& offset) {
+    return static_cast<ColumnType>(deserialize_int(buffer, offset));
+}
+
+// --- ColumnDefinition Serialization ---
+void serialize_column_definition(std::vector<char>& buffer, size_t& offset, const ColumnDefinition& col_def) {
+    serialize_string(buffer, offset, col_def.name);
+    serialize_column_type(buffer, offset, col_def.type);
+}
+
+ColumnDefinition deserialize_column_definition(const std::vector<char>& buffer, size_t& offset) {
+    ColumnDefinition col_def;
+    col_def.name = deserialize_string(buffer, offset);
+    col_def.type = deserialize_column_type(buffer, offset);
+    return col_def;
+}
+
+// --- CreateTableStatement Serialization ---
+void serialize_create_table_statement(std::vector<char>& buffer, size_t& offset, const CreateTableStatement& stmt) {
+    serialize_string(buffer, offset, stmt.table_name);
+    serialize_int(buffer, offset, stmt.columns.size());
+    for (const auto& col_def : stmt.columns) {
+        serialize_column_definition(buffer, offset, col_def);
+    }
+}
+
+std::unique_ptr<CreateTableStatement> deserialize_create_table_statement(const std::vector<char>& buffer, size_t& offset) {
+    auto stmt = std::make_unique<CreateTableStatement>();
+    stmt->table_name = deserialize_string(buffer, offset);
+    int32_t num_columns = deserialize_int(buffer, offset);
+    for (int i = 0; i < num_columns; ++i) {
+        stmt->columns.push_back(deserialize_column_definition(buffer, offset));
+    }
+    return stmt;
+}
