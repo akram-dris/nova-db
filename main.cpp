@@ -36,6 +36,8 @@ int main() {
                     std::cout << val << " ";
                 }
                 std::cout << std::endl;
+            } else if (statement->type == STATEMENT_SELECT) {
+                std::cout << "Parsed SELECT statement for table: " << statement->select_statement->table_name << std::endl;
             } else {
                 std::cout << "Unrecognized command or SQL statement: " << input_line << std::endl;
             }

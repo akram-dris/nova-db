@@ -44,6 +44,18 @@ std::unique_ptr<Statement> parse_statement(const std::string& sql) {
                 statement->insert_statement->values.push_back(remaining_sql.substr(6));
             }
         }
+    } else if (to_upper(token) == "SELECT") {
+        ss >> token; // Expecting '*'
+        if (token == "*") {
+            ss >> token;
+            if (to_upper(token) == "FROM") {
+                ss >> token; // table_name
+                statement->type = STATEMENT_SELECT;
+                statement->select_statement = std::make_unique<SelectStatement>();
+                statement->select_statement->table_name = token;
+                // Further parsing for WHERE clause will go here
+            }
+        }
     }
 
     return statement;
