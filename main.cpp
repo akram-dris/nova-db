@@ -1,7 +1,11 @@
 #include <iostream>
 #include <string>
 #include <fstream>
+#include <memory>
 #include "parser.h"
+#include "pager.h"
+
+std::unique_ptr<Pager> current_pager = nullptr;
 
 void print_prompt() {
     std::cout << "nova> ";
@@ -18,17 +22,19 @@ int main() {
 
         if (input_line.rfind(".open", 0) == 0) {
             std::string filename = input_line.substr(6);
-            std::cout << "Opening database '" << filename << "'." << std::endl;
-            // In the future, this will open the database file.
+            try {
+                current_pager = std::make_unique<Pager>(filename);
+                std::cout << "Database '" << filename << "' opened successfully." << std::endl;
+            } catch (const std::exception& e) {
+                std::cerr << "Error opening database: " << e.what() << std::endl;
+            }
         } else if (input_line == ".exit") {
             std::cout << "Goodbye from NovaDB." << std::endl;
             break;
         } else {
             // Attempt to parse SQL statement
             auto statement = parse_statement(input_line);
-            if (statement->type == STATEMENT_UNKNOWN) {
-                std::cout << "Unrecognized command or SQL statement: " << input_line << std::endl;
-            } else if (statement->type == STATEMENT_CREATE_TABLE) {
+            if (statement->type == STATEMENT_CREATE_TABLE) {
                 std::cout << "Parsed CREATE TABLE statement for table: " << statement->create_table_statement->table_name << std::endl;
             } else if (statement->type == STATEMENT_INSERT) {
                 std::cout << "Parsed INSERT statement for table: " << statement->insert_statement->table_name << ", values: ";
