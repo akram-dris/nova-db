@@ -65,12 +65,12 @@ struct SelectStatement {
 struct UpdateStatement {
     std::string table_name;
     std::vector<std::pair<std::string, std::string>> set_clauses; // e.g., {{"column", "value"}}
-    std::string where_clause; // Placeholder for now
+    std::unique_ptr<WhereCondition> where_condition;
 };
 
 struct DeleteStatement {
     std::string table_name;
-    std::string where_clause; // Placeholder for now
+    std::unique_ptr<WhereCondition> where_condition;
 };
 
 struct Statement {

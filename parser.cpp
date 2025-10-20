@@ -175,15 +175,68 @@ std::unique_ptr<Statement> parse_statement(const std::string& sql) {
         ss >> token; // table_name
         statement->type = STATEMENT_UPDATE;
         statement->update_statement = std::make_unique<UpdateStatement>();
-        statement->update_statement->table_name = token;
+        std::string table_name_with_semicolon = token;
+        // Remove trailing semicolon if present
+        if (!table_name_with_semicolon.empty() && table_name_with_semicolon.back() == ';') {
+            table_name_with_semicolon.pop_back();
+        }
+        statement->update_statement->table_name = trim(table_name_with_semicolon);
 
         ss >> token; // Expecting "SET"
         if (to_upper(token) == "SET") {
-            // For now, just consume the rest of the line as set_clauses and where_clause
             std::string remaining_sql;
             std::getline(ss, remaining_sql);
-            remaining_sql.erase(0, remaining_sql.find_first_not_of(" \t\n\r\f\v"));
-            statement->update_statement->set_clauses.push_back({"raw_set_clause", remaining_sql});
+            remaining_sql = trim(remaining_sql);
+
+            // Find WHERE clause position
+            size_t where_pos = to_upper(remaining_sql).find("WHERE");
+            std::string set_part;
+            std::string where_part;
+
+            if (where_pos != std::string::npos) {
+                set_part = remaining_sql.substr(0, where_pos);
+                where_part = remaining_sql.substr(where_pos + 5); // Skip "WHERE"
+            } else {
+                set_part = remaining_sql;
+            }
+
+            // Parse SET clauses
+            std::stringstream set_ss(set_part);
+            std::string set_token;
+            while (std::getline(set_ss, set_token, ',')) {
+                size_t eq_pos = set_token.find("=");
+                if (eq_pos != std::string::npos) {
+                    std::string column_name = trim(set_token.substr(0, eq_pos));
+                    std::string value = trim(set_token.substr(eq_pos + 1));
+                    if (!column_name.empty() && !value.empty()) {
+                        statement->update_statement->set_clauses.push_back({column_name, value});
+                    }
+                }
+            }
+
+            // Parse WHERE clause
+            if (!where_part.empty()) {
+                where_part = trim(where_part);
+                // Remove trailing semicolon if present
+                if (!where_part.empty() && where_part.back() == ';') {
+                    where_part.pop_back();
+                    where_part = trim(where_part);
+                }
+
+                // Parse condition: column_name = value
+                size_t eq_pos = where_part.find("=");
+                if (eq_pos != std::string::npos) {
+                    std::string column_name = trim(where_part.substr(0, eq_pos));
+                    std::string value = trim(where_part.substr(eq_pos + 1));
+
+                    if (!column_name.empty() && !value.empty()) {
+                        statement->update_statement->where_condition = std::make_unique<WhereCondition>();
+                        statement->update_statement->where_condition->column_name = column_name;
+                        statement->update_statement->where_condition->op = OP_EQ; // Only equality for now
+                        statement->update_statement->where_condition->value = value;
+                    }
+                }
+            }
         }
     } else if (to_upper(token) == "DELETE") {
         ss >> token;
@@ -191,14 +244,42 @@ std::unique_ptr<Statement> parse_statement(const std::string& sql) {
             ss >> token; // table_name
             statement->type = STATEMENT_DELETE;
             statement->delete_statement = std::make_unique<DeleteStatement>();
-            statement->delete_statement->table_name = token;
+            std::string table_name_with_semicolon = token;
+            // Remove trailing semicolon if present
+            if (!table_name_with_semicolon.empty() && table_name_with_semicolon.back() == ';') {
+                table_name_with_semicolon.pop_back();
+            }
+            statement->delete_statement->table_name = trim(table_name_with_semicolon);
 
-            // For now, just consume the rest of the line as where_clause
+            // Parse WHERE clause
             std::string remaining_sql;
             std::getline(ss, remaining_sql);
-            remaining_sql.erase(0, remaining_sql.find_first_not_of(" \t\n\r\f\v"));
-            if (to_upper(remaining_sql.substr(0, 5)) == "WHERE") {
-                statement->delete_statement->where_clause = remaining_sql.substr(5);
+            remaining_sql = trim(remaining_sql);
+
+            size_t where_pos = to_upper(remaining_sql).find("WHERE");
+            if (where_pos != std::string::npos) {
+                std::string condition_str = remaining_sql.substr(where_pos + 5); // Skip "WHERE"
+                condition_str = trim(condition_str);
+
+                // Remove trailing semicolon if present
+                if (!condition_str.empty() && condition_str.back() == ';') {
+                    condition_str.pop_back();
+                    condition_str = trim(condition_str);
+                }
+
+                // Parse condition: column_name = value
+                size_t eq_pos = condition_str.find("=");
+                if (eq_pos != std::string::npos) {
+                    std::string column_name = trim(condition_str.substr(0, eq_pos));
+                    std::string value = trim(condition_str.substr(eq_pos + 1));
+
+                    if (!column_name.empty() && !value.empty()) {
+                        statement->delete_statement->where_condition = std::make_unique<WhereCondition>();
+                        statement->delete_statement->where_condition->column_name = column_name;
+                        statement->delete_statement->where_condition->op = OP_EQ; // Only equality for now
+                        statement->delete_statement->where_condition->value = value;
+                    }
+                }
             }
         }
     }

@@ -257,6 +257,19 @@ int main() {
                     // Assuming records are stored one per page, starting from page 1 (after metadata page 0)
                     for (int page_num = METADATA_PAGE_NUM + 1; page_num < current_pager->get_num_pages(); ++page_num) {
                         std::vector<char> record_page = current_pager->read_page(page_num);
+
+                        // Skip page if it's entirely zeros (heuristic for deleted records)
+                        bool is_zero_page = true;
+                        for (char c : record_page) {
+                            if (c != 0) {
+                                is_zero_page = false;
+                                break;
+                            }
+                        }
+                        if (is_zero_page) {
+                            continue; // Skip this page, it's considered deleted
+                        }
+
                         size_t record_read_offset = 0;
 
                         std::vector<std::string> row_values;
@@ -326,13 +339,238 @@ int main() {
                     std::cerr << "Error executing SELECT statement: " << e.what() << std::endl;
                 }
             } else if (statement->type == STATEMENT_UPDATE) {
-                std::cout << "Parsed UPDATE statement for table: " << statement->update_statement->table_name << ", SET clause: ";
-                for (const auto& set_pair : statement->update_statement->set_clauses) {
-                    std::cout << set_pair.second << " ";
+                if (!current_pager) {
+                    std::cout << "Error: No database open. Use .open <filename.db>" << std::endl;
+                    continue;
+                }
+
+                try {
+                    // 1. Retrieve Table Schema
+                    std::unique_ptr<CreateTableStatement> table_schema = nullptr;
+                    std::vector<char> metadata_page = current_pager->read_page(METADATA_PAGE_NUM);
+                    size_t read_offset = 0;
+                    int32_t num_tables = deserialize_int(metadata_page, read_offset);
+
+                    for (int i = 0; i < num_tables; ++i) {
+                        auto current_schema = deserialize_create_table_statement(metadata_page, read_offset);
+                        if (current_schema->table_name == statement->update_statement->table_name) {
+                            table_schema = std::move(current_schema);
+                            break;
+                        }
+                    }
+
+                    if (!table_schema) {
+                        std::cout << "Error: Table '" << statement->update_statement->table_name << "' not found." << std::endl;
+                        continue;
+                    }
+
+                    int updated_rows = 0;
+                    // 2. Table Scan and Record Update
+                    for (int page_num = METADATA_PAGE_NUM + 1; page_num < current_pager->get_num_pages(); ++page_num) {
+                        std::vector<char> record_page = current_pager->read_page(page_num);
+                        size_t record_read_offset = 0;
+
+                        std::vector<std::string> row_values;
+                        // Deserialize all values for the current record
+                        for (size_t i = 0; i < table_schema->columns.size(); ++i) {
+                            const auto& col_def = table_schema->columns[i];
+                            row_values.push_back(deserialize_value(record_page, record_read_offset, col_def.type));
+                        }
+
+                        bool condition_met = true; // Assume true if no WHERE clause
+                        // Evaluate WHERE condition if present
+                        if (statement->update_statement->where_condition) {
+                            condition_met = false; // Reset to false, must be explicitly met
+
+                            const auto& wc = statement->update_statement->where_condition;
+                            int column_index = -1;
+                            for (size_t i = 0; i < table_schema->columns.size(); ++i) {
+                                if (table_schema->columns[i].name == wc->column_name) {
+                                    column_index = i;
+                                    break;
+                                }
+                            }
+
+                            if (column_index != -1) {
+                                const auto& col_def = table_schema->columns[column_index];
+                                const std::string& record_value = row_values[column_index];
+
+                                // For now, only handle OP_EQ
+                                if (wc->op == OP_EQ) {
+                                    if (col_def.type == COLUMN_TYPE_INT) {
+                                        try {
+                                            if (std::stoi(record_value) == std::stoi(wc->value)) {
+                                                condition_met = true;
+                                            }
+                                        } catch (const std::exception& e) {
+                                            std::cerr << "Warning: Type conversion error in WHERE clause for INT comparison: " << e.what() << std::endl;
+                                        }
+                                    } else if (col_def.type == COLUMN_TYPE_TEXT) {
+                                        std::string cleaned_wc_value = wc->value;
+                                        if (cleaned_wc_value.length() >= 2 && cleaned_wc_value.front() == '\'' && cleaned_wc_value.back() == '\'') {
+                                            cleaned_wc_value = cleaned_wc_value.substr(1, cleaned_wc_value.length() - 2);
+                                        }
+                                        if (record_value == cleaned_wc_value) {
+                                            condition_met = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (condition_met) {
+                            // Apply SET clauses
+                            for (const auto& set_pair : statement->update_statement->set_clauses) {
+                                int column_index_to_update = -1;
+                                for (size_t i = 0; i < table_schema->columns.size(); ++i) {
+                                    if (table_schema->columns[i].name == set_pair.first) {
+                                        column_index_to_update = i;
+                                        break;
+                                    }
+                                }
+
+                                if (column_index_to_update != -1) {
+                                    row_values[column_index_to_update] = set_pair.second;
+                                } else {
+                                    std::cerr << "Warning: Column '" << set_pair.first << "' not found in table '" << table_schema->table_name << "'." << std::endl;
+                                }
+                            }
+
+                            // Serialize and Write Back
+                            std::vector<char> updated_record_page(PAGE_SIZE, 0);
+                            size_t updated_write_offset = 0;
+                            for (size_t i = 0; i < row_values.size(); ++i) {
+                                const auto& col_def = table_schema->columns[i];
+                                try {
+                                    serialize_value(updated_record_page, updated_write_offset, col_def.type, row_values[i]);
+                                } catch (const std::exception& e) {
+                                    std::cerr << "Error: Failed to serialize updated value for column '" << col_def.name << "': " << e.what() << std::endl;
+                                    // Decide how to handle this error: skip update for this record, or rollback
+                                    // For now, we'll just log and continue, potentially leaving a corrupted record
+                                }
+                            }
+                            current_pager->write_page(page_num, updated_record_page);
+                            updated_rows++;
+                        }
+                    }
+                    std::cout << "Updated " << updated_rows << " rows in table '" << table_schema->table_name << "'." << std::endl;
+
+                } catch (const std::exception& e) {
+                    std::cerr << "Error executing UPDATE statement: " << e.what() << std::endl;
+                }
+            } else if (statement->type == STATEMENT_DELETE) {
+                std::cout << "Parsed DELETE statement for table: " << statement->delete_statement->table_name;
+                if (statement->delete_statement->where_condition) {
+                    std::cout << ", WHERE condition: column_name=" << statement->delete_statement->where_condition->column_name
+                              << ", op=" << statement->delete_statement->where_condition->op
+                              << ", value=" << statement->delete_statement->where_condition->value;
                 }
                 std::cout << std::endl;
-            } else if (statement->type == STATEMENT_DELETE) {
-                std::cout << "Parsed DELETE statement for table: " << statement->delete_statement->table_name << ", WHERE clause: " << statement->delete_statement->where_clause << std::endl;
+
+                if (!current_pager) {
+                    std::cout << "Error: No database open. Use .open <filename.db>" << std::endl;
+                    continue;
+                }
+
+                try {
+                    // 1. Retrieve Table Schema
+                    std::unique_ptr<CreateTableStatement> table_schema = nullptr;
+                    std::vector<char> metadata_page = current_pager->read_page(METADATA_PAGE_NUM);
+                    size_t read_offset = 0;
+                    int32_t num_tables = deserialize_int(metadata_page, read_offset);
+
+                    for (int i = 0; i < num_tables; ++i) {
+                        auto current_schema = deserialize_create_table_statement(metadata_page, read_offset);
+                        if (current_schema->table_name == statement->delete_statement->table_name) {
+                            table_schema = std::move(current_schema);
+                            break;
+                        }
+                    }
+
+                    if (!table_schema) {
+                        std::cout << "Error: Table '" << statement->delete_statement->table_name << "' not found." << std::endl;
+                        continue;
+                    }
+
+                    int deleted_rows = 0;
+                    // 2. Table Scan and Record Deletion
+                    for (int page_num = METADATA_PAGE_NUM + 1; page_num < current_pager->get_num_pages(); ++page_num) {
+                        std::vector<char> record_page = current_pager->read_page(page_num);
+
+                        // Check if page is already zeroed out (considered deleted)
+                        bool is_zero_page = true;
+                        for (char c : record_page) {
+                            if (c != 0) {
+                                is_zero_page = false;
+                                break;
+                            }
+                        }
+                        if (is_zero_page) {
+                            continue; // Skip this page, it's already deleted
+                        }
+
+                        size_t record_read_offset = 0;
+
+                        std::vector<std::string> row_values;
+                        // Deserialize all values for the current record
+                        for (size_t i = 0; i < table_schema->columns.size(); ++i) {
+                            const auto& col_def = table_schema->columns[i];
+                            row_values.push_back(deserialize_value(record_page, record_read_offset, col_def.type));
+                        }
+
+                        bool condition_met = true; // Assume true if no WHERE clause
+                        // Evaluate WHERE condition if present
+                        if (statement->delete_statement->where_condition) {
+                            condition_met = false; // Reset to false, must be explicitly met
+
+                            const auto& wc = statement->delete_statement->where_condition;
+                            int column_index = -1;
+                            for (size_t i = 0; i < table_schema->columns.size(); ++i) {
+                                if (table_schema->columns[i].name == wc->column_name) {
+                                    column_index = i;
+                                    break;
+                                }
+                            }
+
+                            if (column_index != -1) {
+                                const auto& col_def = table_schema->columns[column_index];
+                                const std::string& record_value = row_values[column_index];
+
+                                // For now, only handle OP_EQ
+                                if (wc->op == OP_EQ) {
+                                    if (col_def.type == COLUMN_TYPE_INT) {
+                                        try {
+                                            if (std::stoi(record_value) == std::stoi(wc->value)) {
+                                                condition_met = true;
+                                            }
+                                        } catch (const std::exception& e) {
+                                            std::cerr << "Warning: Type conversion error in WHERE clause for INT comparison: " << e.what() << std::endl;
+                                        }
+                                    } else if (col_def.type == COLUMN_TYPE_TEXT) {
+                                        std::string cleaned_wc_value = wc->value;
+                                        if (cleaned_wc_value.length() >= 2 && cleaned_wc_value.front() == '\'' && cleaned_wc_value.back() == '\'') {
+                                            cleaned_wc_value = cleaned_wc_value.substr(1, cleaned_wc_value.length() - 2);
+                                        }
+                                        if (record_value == cleaned_wc_value) {
+                                            condition_met = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (condition_met) {
+                            // Mark for Deletion: Overwrite page with zeros
+                            std::vector<char> empty_page(PAGE_SIZE, 0);
+                            current_pager->write_page(page_num, empty_page);
+                            deleted_rows++;
+                        }
+                    }
+                    std::cout << "Deleted " << deleted_rows << " rows from table '" << table_schema->table_name << "'." << std::endl;
+
+                } catch (const std::exception& e) {
+                    std::cerr << "Error executing DELETE statement: " << e.what() << std::endl;
+                }
             } else {
                 std::cout << "Unrecognized command or SQL statement: " << input_line << std::endl;
             }
