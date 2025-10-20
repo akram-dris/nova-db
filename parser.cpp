@@ -70,6 +70,22 @@ std::unique_ptr<Statement> parse_statement(const std::string& sql) {
             remaining_sql.erase(0, remaining_sql.find_first_not_of(" \t\n\r\f\v"));
             statement->update_statement->set_clauses.push_back({"raw_set_clause", remaining_sql});
         }
+    } else if (to_upper(token) == "DELETE") {
+        ss >> token;
+        if (to_upper(token) == "FROM") {
+            ss >> token; // table_name
+            statement->type = STATEMENT_DELETE;
+            statement->delete_statement = std::make_unique<DeleteStatement>();
+            statement->delete_statement->table_name = token;
+
+            // For now, just consume the rest of the line as where_clause
+            std::string remaining_sql;
+            std::getline(ss, remaining_sql);
+            remaining_sql.erase(0, remaining_sql.find_first_not_of(" \t\n\r\f\v"));
+            if (to_upper(remaining_sql.substr(0, 5)) == "WHERE") {
+                statement->delete_statement->where_clause = remaining_sql.substr(5);
+            }
+        }
     }
 
     return statement;

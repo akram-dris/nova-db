@@ -44,6 +44,8 @@ int main() {
                     std::cout << set_pair.second << " ";
                 }
                 std::cout << std::endl;
+            } else if (statement->type == STATEMENT_DELETE) {
+                std::cout << "Parsed DELETE statement for table: " << statement->delete_statement->table_name << ", WHERE clause: " << statement->delete_statement->where_clause << std::endl;
             } else {
                 std::cout << "Unrecognized command or SQL statement: " << input_line << std::endl;
             }

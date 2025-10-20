@@ -44,12 +44,18 @@ struct UpdateStatement {
     std::string where_clause; // Placeholder for now
 };
 
+struct DeleteStatement {
+    std::string table_name;
+    std::string where_clause; // Placeholder for now
+};
+
 struct Statement {
     StatementType type;
     std::unique_ptr<CreateTableStatement> create_table_statement;
     std::unique_ptr<InsertStatement> insert_statement;
     std::unique_ptr<SelectStatement> select_statement;
     std::unique_ptr<UpdateStatement> update_statement;
+    std::unique_ptr<DeleteStatement> delete_statement;
     // Add more unique_ptrs for other statement types as needed
 };
 
