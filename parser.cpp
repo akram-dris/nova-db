@@ -133,8 +133,42 @@ std::unique_ptr<Statement> parse_statement(const std::string& sql) {
                 ss >> token; // table_name
                 statement->type = STATEMENT_SELECT;
                 statement->select_statement = std::make_unique<SelectStatement>();
-                statement->select_statement->table_name = token;
+                std::string table_name_with_semicolon = token;
+                // Remove trailing semicolon if present
+                if (!table_name_with_semicolon.empty() && table_name_with_semicolon.back() == ';') {
+                    table_name_with_semicolon.pop_back();
+                }
+                statement->select_statement->table_name = trim(table_name_with_semicolon);
                 // Further parsing for WHERE clause will go here
+                std::string remaining_sql;
+                std::getline(ss, remaining_sql); // Get the rest of the line
+                remaining_sql = trim(remaining_sql);
+
+                size_t where_pos = to_upper(remaining_sql).find("WHERE");
+                if (where_pos != std::string::npos) {
+                    std::string condition_str = remaining_sql.substr(where_pos + 5); // Skip "WHERE"
+                    condition_str = trim(condition_str);
+
+                    // Remove trailing semicolon if present
+                    if (!condition_str.empty() && condition_str.back() == ';') {
+                        condition_str.pop_back();
+                        condition_str = trim(condition_str);
+                    }
+
+                    // Parse condition: column_name = value
+                    size_t eq_pos = condition_str.find("=");
+                    if (eq_pos != std::string::npos) {
+                        std::string column_name = trim(condition_str.substr(0, eq_pos));
+                        std::string value = trim(condition_str.substr(eq_pos + 1));
+
+                        if (!column_name.empty() && !value.empty()) {
+                            statement->select_statement->where_condition = std::make_unique<WhereCondition>();
+                            statement->select_statement->where_condition->column_name = column_name;
+                            statement->select_statement->where_condition->op = OP_EQ; // Only equality for now
+                            statement->select_statement->where_condition->value = value;
+                        }
+                    }
+                }
             }
         }
     } else if (to_upper(token) == "UPDATE") {

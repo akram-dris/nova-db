@@ -209,6 +209,122 @@ int main() {
                 }
             } else if (statement->type == STATEMENT_SELECT) {
                 std::cout << "Parsed SELECT statement for table: " << statement->select_statement->table_name << std::endl;
+
+                if (!current_pager) {
+                    std::cout << "Error: No database open. Use .open <filename.db>" << std::endl;
+                    continue;
+                }
+
+                try {
+                    // 1. Retrieve Table Schema
+                    std::unique_ptr<CreateTableStatement> table_schema = nullptr;
+                    std::vector<char> metadata_page = current_pager->read_page(METADATA_PAGE_NUM);
+                    size_t read_offset = 0;
+                    int32_t num_tables = deserialize_int(metadata_page, read_offset);
+
+                    for (int i = 0; i < num_tables; ++i) {
+                        auto current_schema = deserialize_create_table_statement(metadata_page, read_offset);
+                        if (current_schema->table_name == statement->select_statement->table_name) {
+                            table_schema = std::move(current_schema);
+                            break;
+                        }
+                    }
+
+                    if (!table_schema) {
+                        std::cout << "Error: Table '" << statement->select_statement->table_name << "' not found." << std::endl;
+                        continue;
+                    }
+
+                    // Print column headers
+                    for (size_t i = 0; i < table_schema->columns.size(); ++i) {
+                        std::cout << table_schema->columns[i].name;
+                        if (i < table_schema->columns.size() - 1) {
+                            std::cout << " | ";
+                        }
+                    }
+                    std::cout << std::endl;
+                    for (size_t i = 0; i < table_schema->columns.size(); ++i) {
+                        for (size_t j = 0; j < table_schema->columns[i].name.length(); ++j) {
+                            std::cout << "-";
+                        }
+                        if (i < table_schema->columns.size() - 1) {
+                            std::cout << "-|- ";
+                        }
+                    }
+                    std::cout << std::endl;
+
+                    // 3. Table Scan and Record Deserialization
+                    // Assuming records are stored one per page, starting from page 1 (after metadata page 0)
+                    for (int page_num = METADATA_PAGE_NUM + 1; page_num < current_pager->get_num_pages(); ++page_num) {
+                        std::vector<char> record_page = current_pager->read_page(page_num);
+                        size_t record_read_offset = 0;
+
+                        std::vector<std::string> row_values;
+                        bool condition_met = true; // Assume true if no WHERE clause or condition is met
+
+                        // Deserialize all values for the current record
+                        for (size_t i = 0; i < table_schema->columns.size(); ++i) {
+                            const auto& col_def = table_schema->columns[i];
+                            row_values.push_back(deserialize_value(record_page, record_read_offset, col_def.type));
+                        }
+
+                        // Evaluate WHERE condition if present
+                        if (statement->select_statement->where_condition) {
+                            condition_met = false; // Reset to false, must be explicitly met
+
+                            const auto& wc = statement->select_statement->where_condition;
+                            int column_index = -1;
+                            for (size_t i = 0; i < table_schema->columns.size(); ++i) {
+                                if (table_schema->columns[i].name == wc->column_name) {
+                                    column_index = i;
+                                    break;
+                                }
+                            }
+
+                            if (column_index != -1) {
+                                const auto& col_def = table_schema->columns[column_index];
+                                const std::string& record_value = row_values[column_index];
+
+                                // For now, only handle OP_EQ
+                                if (wc->op == OP_EQ) {
+                                    if (col_def.type == COLUMN_TYPE_INT) {
+                                        try {
+                                            if (std::stoi(record_value) == std::stoi(wc->value)) {
+                                                condition_met = true;
+                                            }
+                                        } catch (const std::exception& e) {
+                                            // Handle conversion error, e.g., log it
+                                            std::cerr << "Warning: Type conversion error in WHERE clause for INT comparison: " << e.what() << std::endl;
+                                        }
+                                    } else if (col_def.type == COLUMN_TYPE_TEXT) {
+                                        // Remove surrounding quotes from wc->value if present
+                                        std::string cleaned_wc_value = wc->value;
+                                        if (cleaned_wc_value.length() >= 2 && cleaned_wc_value.front() == '\'' && cleaned_wc_value.back() == '\'') {
+                                            cleaned_wc_value = cleaned_wc_value.substr(1, cleaned_wc_value.length() - 2);
+                                        }
+                                        if (record_value == cleaned_wc_value) {
+                                            condition_met = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 4. Display Results (only if condition met)
+                        if (condition_met) {
+                            for (size_t i = 0; i < row_values.size(); ++i) {
+                                std::cout << row_values[i];
+                                if (i < row_values.size() - 1) {
+                                    std::cout << " | ";
+                                }
+                            }
+                            std::cout << std::endl;
+                        }
+                    }
+
+                } catch (const std::exception& e) {
+                    std::cerr << "Error executing SELECT statement: " << e.what() << std::endl;
+                }
             } else if (statement->type == STATEMENT_UPDATE) {
                 std::cout << "Parsed UPDATE statement for table: " << statement->update_statement->table_name << ", SET clause: ";
                 for (const auto& set_pair : statement->update_statement->set_clauses) {

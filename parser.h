@@ -41,9 +41,25 @@ struct InsertStatement {
     std::vector<std::string> values;
 };
 
+enum OperatorType {
+    OP_EQ, // Equal
+    OP_NE, // Not Equal
+    OP_GT, // Greater Than
+    OP_LT, // Less Than
+    OP_GE, // Greater Than or Equal
+    OP_LE, // Less Than or Equal
+    OP_UNKNOWN
+};
+
+struct WhereCondition {
+    std::string column_name;
+    OperatorType op;
+    std::string value; // Value as a string, will be converted based on column type
+};
+
 struct SelectStatement {
     std::string table_name;
-    std::string where_clause; // Placeholder for now
+    std::unique_ptr<WhereCondition> where_condition;
 };
 
 struct UpdateStatement {
