@@ -311,7 +311,8 @@ int main() {
                             display_row(row_values, table_schema->columns);
                         }
                     } else { // Full table scan
-                        for (int page_num = INDEX_ROOT_PAGE_NUM + 1; page_num < current_pager->get_num_pages(); ++page_num) {
+                        std::vector<int> record_pages = current_index->get_all_record_pages();
+                        for (int page_num : record_pages) {
                             std::vector<char> record_page = current_pager->read_page(page_num);
 
                             bool is_zero_page = true;
