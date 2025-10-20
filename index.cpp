@@ -154,15 +154,41 @@ int Index::search(const std::string& key) {
 }
 
 void Index::remove(const std::string& key) {
-    // Not implemented yet
+    int current_page_num = root_page_num_;
+    while (true) {
+        std::unique_ptr<BTreeNode> node = read_btree_node(pager_, current_page_num);
+        if (node->is_leaf) {
+            size_t i = 0;
+            while (i < node->keys.size() && key != node->keys[i]) {
+                i++;
+            }
+            if (i < node->keys.size() && key == node->keys[i]) {
+                std::cout << "DEBUG: Index::remove - Before erase: keys=" << node->keys.size() << ", record_pointers=" << node->record_pointers.size() << std::endl;
+                node->keys.erase(node->keys.begin() + i);
+                node->record_pointers.erase(node->record_pointers.begin() + i);
+                std::cout << "DEBUG: Index::remove - After erase: keys=" << node->keys.size() << ", record_pointers=" << node->record_pointers.size() << std::endl;
+                write_btree_node(pager_, current_page_num, *node);
+            }
+            return;
+        } else {
+            size_t i = 0;
+            while (i < node->keys.size() && key > node->keys[i]) {
+                i++;
+            }
+            current_page_num = node->children[i];
+        }
+    }
 }
 
 void get_all_record_pages_from_node(std::shared_ptr<Pager> pager, int page_num, std::vector<int>& record_pages) {
     std::unique_ptr<BTreeNode> node = read_btree_node(pager, page_num);
     if (node->is_leaf) {
+        std::cout << "DEBUG: get_all_record_pages_from_node - Leaf node " << page_num << ", record_pointers: ";
         for (int record_page : node->record_pointers) {
+            std::cout << record_page << " ";
             record_pages.push_back(record_page);
         }
+        std::cout << std::endl;
     } else {
         for (int child_page : node->children) {
             get_all_record_pages_from_node(pager, child_page, record_pages);

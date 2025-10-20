@@ -328,9 +328,14 @@ int main() {
 
                             size_t record_read_offset = 0;
                             std::vector<std::string> row_values;
-                            for (size_t i = 0; i < table_schema->columns.size(); ++i) {
-                                const auto& col_def = table_schema->columns[i];
-                                row_values.push_back(deserialize_value(record_page, record_read_offset, col_def.type));
+                            try {
+                                for (size_t i = 0; i < table_schema->columns.size(); ++i) {
+                                    const auto& col_def = table_schema->columns[i];
+                                    row_values.push_back(deserialize_value(record_page, record_read_offset, col_def.type));
+                                }
+                            } catch (const std::out_of_range& e) {
+                                std::cerr << "Skipping page " << page_num << " due to deserialization error: " << e.what() << std::endl;
+                                continue;
                             }
 
                             bool condition_met = true;

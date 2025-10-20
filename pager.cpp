@@ -1,4 +1,5 @@
 #include "pager.h"
+#include "wal.h" // Include wal.h
 #include <stdexcept>
 #include <filesystem>
 
@@ -24,6 +25,8 @@ Pager::Pager(const std::string& filename) : filename_(filename), num_pages_(0) {
         // This should ideally not happen with fixed-size pages, but handle it
         num_pages_++;
     }
+
+    wal_ = std::make_unique<WriteAheadLog>(filename_); // Initialize WriteAheadLog
 }
 
 Pager::~Pager() {
@@ -50,6 +53,8 @@ void Pager::write_page(int page_num, const std::vector<char>& data) {
     if (data.size() != PAGE_SIZE) {
         throw std::invalid_argument("Data size must match PAGE_SIZE");
     }
+
+    wal_->log_update(page_num, data); // Log the update
 
     if (page_num >= num_pages_) {
         // If writing to a new page, extend the file
