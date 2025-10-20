@@ -1,0 +1,9 @@
+# CMake build files
+/cmake-build-debug/
+
+# CLion IDE files
+/.idea/
+!/.idea/.name
+
+# macOS files
+.DS_Store
