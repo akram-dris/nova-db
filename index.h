@@ -38,6 +38,7 @@ private:
     // Helper functions for B-Tree operations
     int find_leaf(const std::string& key);
     void split_child(int parent_page_num, int child_index, int child_page_num);
+    void remove_from_leaf(int leaf_page_num, const std::string& key);
     // ... (will be implemented in index.cpp)
 };
 

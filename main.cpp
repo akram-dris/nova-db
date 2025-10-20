@@ -540,24 +540,19 @@ int main() {
                         std::vector<char> record_page = current_pager->read_page(page_num);
 
                         // Check if page is already zeroed out (considered deleted)
-                        bool is_zero_page = true;
-                        for (char c : record_page) {
-                            if (c != 0) {
-                                is_zero_page = false;
-                                break;
-                            }
-                        }
-                        if (is_zero_page) {
-                            continue; // Skip this page, it's already deleted
-                        }
-
                         size_t record_read_offset = 0;
-
                         std::vector<std::string> row_values;
-                        // Deserialize all values for the current record
-                        for (size_t i = 0; i < table_schema->columns.size(); ++i) {
-                            const auto& col_def = table_schema->columns[i];
-                            row_values.push_back(deserialize_value(record_page, record_read_offset, col_def.type));
+                        try {
+                            // Deserialize all values for the current record
+                            for (size_t i = 0; i < table_schema->columns.size(); ++i) {
+                                const auto& col_def = table_schema->columns[i];
+                                row_values.push_back(deserialize_value(record_page, record_read_offset, col_def.type));
+                            }
+                        } catch (const std::out_of_range& e) {
+                            // This page is likely corrupted or not a valid record page.
+                            // Log the error and continue to the next page.
+                            std::cerr << "Skipping page " << page_num << " due to deserialization error: " << e.what() << std::endl;
+                            continue;
                         }
 
                         bool condition_met = true; // Assume true if no WHERE clause
@@ -606,6 +601,13 @@ int main() {
                             std::vector<char> empty_page(PAGE_SIZE, 0);
                             current_pager->write_page(page_num, empty_page);
                             deleted_rows++;
+
+                            // Remove from index (assuming first column is the primary key)
+                            if (current_index && !table_schema->columns.empty()) {
+                                const std::string& primary_key_value = row_values[0];
+                                current_index->remove(primary_key_value);
+                                std::cout << "Removed from index: key='" << primary_key_value << "'" << std::endl;
+                            }
                         }
                     }
                     std::cout << "Deleted " << deleted_rows << " rows from table '" << table_schema->table_name << "'." << std::endl;
