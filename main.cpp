@@ -383,6 +383,42 @@ int main() {
                                                 condition_met = true;
                                             }
                                         }
+                                    } else if (wc->op == OP_GT) {
+                                        if (col_def.type == COLUMN_TYPE_INT) {
+                                            try {
+                                                if (std::stoi(record_value) > std::stoi(wc->value)) {
+                                                    condition_met = true;
+                                                }
+                                            } catch (const std::exception& e) {
+                                                std::cerr << "Warning: Type conversion error in WHERE clause for INT comparison: " << e.what() << std::endl;
+                                            }
+                                        } else if (col_def.type == COLUMN_TYPE_TEXT) {
+                                            std::string cleaned_wc_value = wc->value;
+                                            if (cleaned_wc_value.length() >= 2 && cleaned_wc_value.front() == '\'' && cleaned_wc_value.back() == '\'') {
+                                                cleaned_wc_value = cleaned_wc_value.substr(1, cleaned_wc_value.length() - 2);
+                                            }
+                                            if (record_value > cleaned_wc_value) {
+                                                condition_met = true;
+                                            }
+                                        }
+                                    } else if (wc->op == OP_LT) {
+                                        if (col_def.type == COLUMN_TYPE_INT) {
+                                            try {
+                                                if (std::stoi(record_value) < std::stoi(wc->value)) {
+                                                    condition_met = true;
+                                                }
+                                            } catch (const std::exception& e) {
+                                                std::cerr << "Warning: Type conversion error in WHERE clause for INT comparison: " << e.what() << std::endl;
+                                            }
+                                        } else if (col_def.type == COLUMN_TYPE_TEXT) {
+                                            std::string cleaned_wc_value = wc->value;
+                                            if (cleaned_wc_value.length() >= 2 && cleaned_wc_value.front() == '\'' && cleaned_wc_value.back() == '\'') {
+                                                cleaned_wc_value = cleaned_wc_value.substr(1, cleaned_wc_value.length() - 2);
+                                            }
+                                            if (record_value < cleaned_wc_value) {
+                                                condition_met = true;
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -518,7 +554,6 @@ int main() {
                                     const auto& col_def = table_schema->columns[column_index];
                                     const std::string& record_value = row_values[column_index];
 
-                                    // For now, only handle OP_EQ
                                     if (wc->op == OP_EQ) {
                                         if (col_def.type == COLUMN_TYPE_INT) {
                                             try {
@@ -534,6 +569,42 @@ int main() {
                                                 cleaned_wc_value = cleaned_wc_value.substr(1, cleaned_wc_value.length() - 2);
                                             }
                                             if (record_value == cleaned_wc_value) {
+                                                condition_met = true;
+                                            }
+                                        }
+                                    } else if (wc->op == OP_GT) {
+                                        if (col_def.type == COLUMN_TYPE_INT) {
+                                            try {
+                                                if (std::stoi(record_value) > std::stoi(wc->value)) {
+                                                    condition_met = true;
+                                                }
+                                            } catch (const std::exception& e) {
+                                                std::cerr << "Warning: Type conversion error in WHERE clause for INT comparison: " << e.what() << std::endl;
+                                            }
+                                        } else if (col_def.type == COLUMN_TYPE_TEXT) {
+                                            std::string cleaned_wc_value = wc->value;
+                                            if (cleaned_wc_value.length() >= 2 && cleaned_wc_value.front() == '\'' && cleaned_wc_value.back() == '\'') {
+                                                cleaned_wc_value = cleaned_wc_value.substr(1, cleaned_wc_value.length() - 2);
+                                            }
+                                            if (record_value > cleaned_wc_value) {
+                                                condition_met = true;
+                                            }
+                                        }
+                                    } else if (wc->op == OP_LT) {
+                                        if (col_def.type == COLUMN_TYPE_INT) {
+                                            try {
+                                                if (std::stoi(record_value) < std::stoi(wc->value)) {
+                                                    condition_met = true;
+                                                }
+                                            } catch (const std::exception& e) {
+                                                std::cerr << "Warning: Type conversion error in WHERE clause for INT comparison: " << e.what() << std::endl;
+                                            }
+                                        } else if (col_def.type == COLUMN_TYPE_TEXT) {
+                                            std::string cleaned_wc_value = wc->value;
+                                            if (cleaned_wc_value.length() >= 2 && cleaned_wc_value.front() == '\'' && cleaned_wc_value.back() == '\'') {
+                                                cleaned_wc_value = cleaned_wc_value.substr(1, cleaned_wc_value.length() - 2);
+                                            }
+                                            if (record_value < cleaned_wc_value) {
                                                 condition_met = true;
                                             }
                                         }
@@ -695,7 +766,6 @@ int main() {
                                     const auto& col_def = table_schema->columns[column_index];
                                     const std::string& record_value = row_values[column_index];
 
-                                    // For now, only handle OP_EQ
                                     if (wc->op == OP_EQ) {
                                         if (col_def.type == COLUMN_TYPE_INT) {
                                             try {
@@ -711,6 +781,43 @@ int main() {
                                                 cleaned_wc_value = cleaned_wc_value.substr(1, cleaned_wc_value.length() - 2);
                                             }
                                             if (record_value == cleaned_wc_value) {
+                                                condition_met = true;
+                                            }
+                                        }
+                                    } else if (wc->op == OP_GT) {
+                                        if (col_def.type == COLUMN_TYPE_INT) {
+                                            try {
+                                                if (std::stoi(record_value) > std::stoi(wc->value)) {
+                                                    condition_met = true;
+                                                }
+                                            } catch (const std::exception& e) {
+                                                std::cerr << "Warning: Type conversion error in WHERE clause for INT comparison: " << e.what() << std::endl;
+                                            }
+                                        } else if (col_def.type == COLUMN_TYPE_TEXT) {
+                                            std::string cleaned_wc_value = wc->value;
+                                            if (cleaned_wc_value.length() >= 2 && cleaned_wc_value.front() == '\'' && cleaned_wc_value.back() == '\'') {
+                                                cleaned_wc_value = cleaned_wc_value.substr(1, cleaned_wc_value.length() - 2);
+                                            }
+                                            if (record_value > cleaned_wc_value) {
+                                                condition_met = true;
+                                            }
+                                        }
+                                    } else if (wc->op == OP_LT) {
+                                        if (col_def.type == COLUMN_TYPE_INT) {
+                                            try {
+                                                if (std::stoi(record_value) < std::stoi(wc->value)) {
+                                                    condition_met = true;
+                                                }
+                                            }
+                                            catch (const std::exception& e) {
+                                                std::cerr << "Warning: Type conversion error in WHERE clause for INT comparison: " << e.what() << std::endl;
+                                            }
+                                        } else if (col_def.type == COLUMN_TYPE_TEXT) {
+                                            std::string cleaned_wc_value = wc->value;
+                                            if (cleaned_wc_value.length() >= 2 && cleaned_wc_value.front() == '\'' && cleaned_wc_value.back() == '\'') {
+                                                cleaned_wc_value = cleaned_wc_value.substr(1, cleaned_wc_value.length() - 2);
+                                            }
+                                            if (record_value < cleaned_wc_value) {
                                                 condition_met = true;
                                             }
                                         }
