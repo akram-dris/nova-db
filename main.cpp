@@ -37,7 +37,8 @@ int main() {
         if (input_line.rfind(".open", 0) == 0) {
             std::string filename = input_line.substr(6);
             try {
-                current_pager = std::make_shared<Pager>(filename); // Use make_shared
+                current_pager = std::make_shared<Pager>(filename);
+                current_pager->recover(); // Perform WAL recovery
                 // For now, assume index root is always page 0 (or some fixed page)
                 // If it's a new DB, root_page_num will be -1, and Index constructor will create it.
                 current_index = std::make_unique<Index>(current_pager, INDEX_ROOT_PAGE_NUM); // Use INDEX_ROOT_PAGE_NUM

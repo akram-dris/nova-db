@@ -2,6 +2,7 @@
 #include "wal.h" // Include wal.h
 #include <stdexcept>
 #include <filesystem>
+#include <iostream> // Added for std::cerr and std::cout
 
 namespace fs = std::filesystem;
 
@@ -46,7 +47,7 @@ std::vector<char> Pager::read_page(int page_num) {
     return page_data;
 }
 
-void Pager::write_page(int page_num, const std::vector<char>& data) {
+void Pager::write_page(int page_num, const std::vector<char>& data, bool log_update) {
     if (page_num < 0) {
         throw std::out_of_range("Page number out of range");
     }
@@ -54,7 +55,9 @@ void Pager::write_page(int page_num, const std::vector<char>& data) {
         throw std::invalid_argument("Data size must match PAGE_SIZE");
     }
 
-    wal_->log_update(page_num, data); // Log the update
+    if (log_update) {
+        wal_->log_update(page_num, data); // Log the update
+    }
 
     if (page_num >= num_pages_) {
         // If writing to a new page, extend the file
@@ -69,4 +72,45 @@ void Pager::write_page(int page_num, const std::vector<char>& data) {
 
 int Pager::get_num_pages() const {
     return num_pages_;
+}
+
+void Pager::recover() {
+    std::string wal_filename = filename_ + ".wal";
+    if (!fs::exists(wal_filename)) {
+        // No WAL file, no recovery needed
+        return;
+    }
+
+    std::fstream wal_file_stream;
+    wal_file_stream.open(wal_filename, std::ios::in | std::ios::binary);
+    if (!wal_file_stream.is_open()) {
+        std::cerr << "Warning: Could not open WAL file for recovery: " << wal_filename << std::endl;
+        return;
+    }
+
+    LogRecordType type;
+    int page_num;
+    std::vector<char> page_data(PAGE_SIZE);
+
+    while (wal_file_stream.read(reinterpret_cast<char*>(&type), sizeof(type))) {
+        if (type == UPDATE) {
+            if (!wal_file_stream.read(reinterpret_cast<char*>(&page_num), sizeof(page_num))) {
+                std::cerr << "Error during WAL recovery: Could not read page_num." << std::endl;
+                break;
+            }
+            if (!wal_file_stream.read(page_data.data(), PAGE_SIZE)) {
+                std::cerr << "Error during WAL recovery: Could not read page_data for page " << page_num << std::endl;
+                break;
+            }
+            // Apply the update to the main database file without logging it again
+            this->write_page(page_num, page_data, false); // Pass false to prevent re-logging
+        } else if (type == COMMIT) {
+            // For now, COMMIT just means the transaction was successful.
+            // No specific action needed here other than continuing to process.
+        }
+    }
+
+    wal_file_stream.close();
+    fs::remove(wal_filename); // Delete WAL file after successful recovery
+    std::cout << "WAL recovery complete. Log file removed." << std::endl;
 }
