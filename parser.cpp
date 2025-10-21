@@ -155,20 +155,30 @@ std::unique_ptr<Statement> parse_statement(const std::string& sql) {
                         condition_str = trim(condition_str);
                     }
 
-                    // Parse condition: column_name = value
-                    size_t eq_pos = condition_str.find("=");
-                    if (eq_pos != std::string::npos) {
-                        std::string column_name = trim(condition_str.substr(0, eq_pos));
-                        std::string value = trim(condition_str.substr(eq_pos + 1));
-
-                        if (!column_name.empty() && !value.empty()) {
-                            statement->select_statement->where_condition = std::make_unique<WhereCondition>();
-                            statement->select_statement->where_condition->column_name = column_name;
-                            statement->select_statement->where_condition->op = OP_EQ; // Only equality for now
-                            statement->select_statement->where_condition->value = value;
-                        }
-                    }
-                }
+                                    // Parse condition: column_name operator value
+                                    size_t op_pos = std::string::npos;
+                                    OperatorType op_type = OP_UNKNOWN;
+                    
+                                    if ((op_pos = condition_str.find("=")) != std::string::npos) {
+                                        op_type = OP_EQ;
+                                    } else if ((op_pos = condition_str.find(">")) != std::string::npos) {
+                                        op_type = OP_GT;
+                                    } else if ((op_pos = condition_str.find("<")) != std::string::npos) {
+                                        op_type = OP_LT;
+                                    }
+                                    // Add more operators as needed
+                    
+                                    if (op_pos != std::string::npos && op_type != OP_UNKNOWN) {
+                                        std::string column_name = trim(condition_str.substr(0, op_pos));
+                                        std::string value = trim(condition_str.substr(op_pos + 1));
+                    
+                                        if (!column_name.empty() && !value.empty()) {
+                                            statement->select_statement->where_condition = std::make_unique<WhereCondition>();
+                                            statement->select_statement->where_condition->column_name = column_name;
+                                            statement->select_statement->where_condition->op = op_type;
+                                            statement->select_statement->where_condition->value = value;
+                                        }
+                                    }                }
             }
         }
     } else if (to_upper(token) == "UPDATE") {
@@ -223,16 +233,27 @@ std::unique_ptr<Statement> parse_statement(const std::string& sql) {
                     where_part = trim(where_part);
                 }
 
-                // Parse condition: column_name = value
-                size_t eq_pos = where_part.find("=");
-                if (eq_pos != std::string::npos) {
-                    std::string column_name = trim(where_part.substr(0, eq_pos));
-                    std::string value = trim(where_part.substr(eq_pos + 1));
+                // Parse condition: column_name operator value
+                size_t op_pos = std::string::npos;
+                OperatorType op_type = OP_UNKNOWN;
+
+                if ((op_pos = where_part.find("=")) != std::string::npos) {
+                    op_type = OP_EQ;
+                } else if ((op_pos = where_part.find(">")) != std::string::npos) {
+                    op_type = OP_GT;
+                } else if ((op_pos = where_part.find("<")) != std::string::npos) {
+                    op_type = OP_LT;
+                }
+                // Add more operators as needed
+
+                if (op_pos != std::string::npos && op_type != OP_UNKNOWN) {
+                    std::string column_name = trim(where_part.substr(0, op_pos));
+                    std::string value = trim(where_part.substr(op_pos + 1));
 
                     if (!column_name.empty() && !value.empty()) {
                         statement->update_statement->where_condition = std::make_unique<WhereCondition>();
                         statement->update_statement->where_condition->column_name = column_name;
-                        statement->update_statement->where_condition->op = OP_EQ; // Only equality for now
+                        statement->update_statement->where_condition->op = op_type;
                         statement->update_statement->where_condition->value = value;
                     }
                 }
@@ -267,16 +288,27 @@ std::unique_ptr<Statement> parse_statement(const std::string& sql) {
                     condition_str = trim(condition_str);
                 }
 
-                // Parse condition: column_name = value
-                size_t eq_pos = condition_str.find("=");
-                if (eq_pos != std::string::npos) {
-                    std::string column_name = trim(condition_str.substr(0, eq_pos));
-                    std::string value = trim(condition_str.substr(eq_pos + 1));
+                // Parse condition: column_name operator value
+                size_t op_pos = std::string::npos;
+                OperatorType op_type = OP_UNKNOWN;
+
+                if ((op_pos = condition_str.find("=")) != std::string::npos) {
+                    op_type = OP_EQ;
+                } else if ((op_pos = condition_str.find(">")) != std::string::npos) {
+                    op_type = OP_GT;
+                } else if ((op_pos = condition_str.find("<")) != std::string::npos) {
+                    op_type = OP_LT;
+                }
+                // Add more operators as needed
+
+                if (op_pos != std::string::npos && op_type != OP_UNKNOWN) {
+                    std::string column_name = trim(condition_str.substr(0, op_pos));
+                    std::string value = trim(condition_str.substr(op_pos + 1));
 
                     if (!column_name.empty() && !value.empty()) {
                         statement->delete_statement->where_condition = std::make_unique<WhereCondition>();
                         statement->delete_statement->where_condition->column_name = column_name;
-                        statement->delete_statement->where_condition->op = OP_EQ; // Only equality for now
+                        statement->delete_statement->where_condition->op = op_type;
                         statement->delete_statement->where_condition->value = value;
                     }
                 }
