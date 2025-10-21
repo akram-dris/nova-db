@@ -17,6 +17,7 @@ int32_t deserialize_int(const std::vector<char>& buffer, size_t& offset);
 // ColumnType serialization
 void serialize_column_type(std::vector<char>& buffer, size_t& offset, ColumnType type);
 ColumnType deserialize_column_type(const std::vector<char>& buffer, size_t& offset);
+ColumnType string_to_column_type(const std::string& type_str);
 
 // ColumnDefinition serialization
 void serialize_column_definition(std::vector<char>& buffer, size_t& offset, const ColumnDefinition& col_def);

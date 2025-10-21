@@ -21,17 +21,6 @@ std::string trim(const std::string& s) {
     return s.substr(first, (last - first + 1));
 }
 
-ColumnType string_to_column_type(const std::string& type_str) {
-    std::string upper_type = to_upper(type_str);
-    if (upper_type == "INT") {
-        return COLUMN_TYPE_INT;
-    } else if (upper_type == "TEXT") {
-        return COLUMN_TYPE_TEXT;
-    } else {
-        return COLUMN_TYPE_UNKNOWN;
-    }
-}
-
 std::string column_type_to_string(ColumnType type) {
     switch (type) {
         case COLUMN_TYPE_INT: return "INT";
@@ -42,14 +31,26 @@ std::string column_type_to_string(ColumnType type) {
 }
 
 std::unique_ptr<Statement> parse_statement(const std::string& sql) {
-    std::cout << "Parsing SQL: " << sql << std::endl;
+    std::string trimmed_sql = trim(sql);
+    if (trimmed_sql.empty()) {
+        auto statement = std::make_unique<Statement>();
+        statement->type = STATEMENT_UNKNOWN; // Or a new STATEMENT_EMPTY type
+        return statement;
+    }
+
+    // std::cout << "Parsing SQL: " << sql << std::endl; // Removed for cleaner output
     auto statement = std::make_unique<Statement>();
     statement->type = STATEMENT_UNKNOWN;
 
-    std::stringstream ss(sql);
+    std::stringstream ss(trimmed_sql);
     std::string token;
 
     ss >> token;
+    // Remove trailing semicolon from the first token if present
+    if (!token.empty() && token.back() == ';') {
+        token.pop_back();
+    }
+    std::cerr << "DEBUG: Parser - First token: '" << token << "'" << std::endl;
     if (to_upper(token) == "CREATE") {
         ss >> token;
         if (to_upper(token) == "TABLE") {
@@ -313,6 +314,39 @@ std::unique_ptr<Statement> parse_statement(const std::string& sql) {
                     }
                 }
             }
+        }
+    } else if (to_upper(token) == "BEGIN") {
+        std::string next_token;
+        ss >> next_token; // Expecting "TRANSACTION"
+        next_token = trim(next_token);
+        if (!next_token.empty() && next_token.back() == ';') {
+            next_token.pop_back();
+        }
+        if (to_upper(next_token) == "TRANSACTION") {
+            statement->type = STATEMENT_BEGIN_TRANSACTION;
+            statement->begin_transaction_statement = std::make_unique<BeginTransactionStatement>();
+        }
+    } else if (to_upper(token) == "COMMIT") {
+        std::string remaining_sql;
+        std::getline(ss, remaining_sql);
+        remaining_sql = trim(remaining_sql);
+        if (!remaining_sql.empty() && remaining_sql.back() == ';') {
+            remaining_sql.pop_back();
+        }
+        if (remaining_sql.empty()) { // COMMIT statement should have no other tokens
+            statement->type = STATEMENT_COMMIT_TRANSACTION;
+            statement->commit_transaction_statement = std::make_unique<CommitTransactionStatement>();
+        }
+    } else if (to_upper(token) == "ROLLBACK") {
+        std::string remaining_sql;
+        std::getline(ss, remaining_sql);
+        remaining_sql = trim(remaining_sql);
+        if (!remaining_sql.empty() && remaining_sql.back() == ';') {
+            remaining_sql.pop_back();
+        }
+        if (remaining_sql.empty()) { // ROLLBACK statement should have no other tokens
+            statement->type = STATEMENT_ROLLBACK_TRANSACTION;
+            statement->rollback_transaction_statement = std::make_unique<RollbackTransactionStatement>();
         }
     }
 

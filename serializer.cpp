@@ -67,6 +67,16 @@ ColumnType deserialize_column_type(const std::vector<char>& buffer, size_t& offs
     return static_cast<ColumnType>(deserialize_int(buffer, offset));
 }
 
+// --- string_to_column_type implementation ---
+ColumnType string_to_column_type(const std::string& type_str) {
+    if (type_str == "INT") {
+        return COLUMN_TYPE_INT;
+    } else if (type_str == "TEXT") {
+        return COLUMN_TYPE_TEXT;
+    }
+    return COLUMN_TYPE_UNKNOWN;
+}
+
 // --- ColumnDefinition Serialization ---
 void serialize_column_definition(std::vector<char>& buffer, size_t& offset, const ColumnDefinition& col_def) {
     serialize_string(buffer, offset, col_def.name);

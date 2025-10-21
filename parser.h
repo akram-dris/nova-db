@@ -5,15 +5,15 @@
 #include <vector>
 #include <memory>
 
-// Forward declarations
-struct Statement;
-
 enum StatementType {
     STATEMENT_CREATE_TABLE,
     STATEMENT_INSERT,
     STATEMENT_SELECT,
     STATEMENT_UPDATE,
     STATEMENT_DELETE,
+    STATEMENT_BEGIN_TRANSACTION,
+    STATEMENT_COMMIT_TRANSACTION,
+    STATEMENT_ROLLBACK_TRANSACTION,
     STATEMENT_UNKNOWN
 };
 
@@ -73,6 +73,10 @@ struct DeleteStatement {
     std::unique_ptr<WhereCondition> where_condition;
 };
 
+struct BeginTransactionStatement {};
+struct CommitTransactionStatement {};
+struct RollbackTransactionStatement {};
+
 struct Statement {
     StatementType type;
     std::unique_ptr<CreateTableStatement> create_table_statement;
@@ -80,6 +84,9 @@ struct Statement {
     std::unique_ptr<SelectStatement> select_statement;
     std::unique_ptr<UpdateStatement> update_statement;
     std::unique_ptr<DeleteStatement> delete_statement;
+    std::unique_ptr<BeginTransactionStatement> begin_transaction_statement;
+    std::unique_ptr<CommitTransactionStatement> commit_transaction_statement;
+    std::unique_ptr<RollbackTransactionStatement> rollback_transaction_statement;
     // Add more unique_ptrs for other statement types as needed
 };
 
