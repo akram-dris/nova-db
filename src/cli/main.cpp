@@ -49,11 +49,14 @@ int main() {
         // Clear screen
         std::cout << "\033[2J\033[H";
         // Display NovaDB banner
-        std::cout << " _______           __         " << std::endl;
-        std::cout << "|   |   |.---.-.--|  |.-----. " << std::endl;
-        std::cout << "|       ||  _  |  _  ||  _  | " << std::endl;
-        std::cout << "|__|_|__||___._|_____||   __| " << std::endl;
-        std::cout << "                     |__|    " << std::endl;
+        std::cout << R"BANNER(
+            ███╗   ██╗ ██████╗ ██╗   ██╗ █████╗     ██████╗ ██████╗
+            ████╗  ██║██╔═══██╗██║   ██║██╔══██╗    ██╔══██╗██╔══██╗
+            ██╔██╗ ██║██║   ██║██║   ██║███████║    ██║  ██║██████╔╝
+            ██║╚██╗██║██║   ██║╚██╗ ██╔╝██╔══██║    ██║  ██║██╔══██╗
+            ██║ ╚████║╚██████╔╝ ╚████╔╝ ██║  ██║    ██████╔╝██████╔╝
+            ╚═╝  ╚═══╝ ╚═════╝   ╚═══╝  ╚═╝  ╚═╝    ╚═════╝ ╚═════╝
+        )BANNER" << std::endl;
         std::cout << std::endl;
         std::cout << "Welcome to NovaDB CLI!" << std::endl;
         std::cout << "Start by opening a database: .open <filename.db>" << std::endl;
