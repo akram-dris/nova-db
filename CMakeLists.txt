@@ -3,5 +3,8 @@ project(nova_db)
 
 set(CMAKE_CXX_STANDARD 17)
 
-add_executable(nova_db main.cpp parser.cpp pager.cpp serializer.cpp index.cpp wal.cpp thread_pool.cpp)
-target_link_libraries(nova_db stdc++fs)
+add_subdirectory(src/core)
+
+add_executable(nova_db src/cli/main.cpp)
+target_include_directories(nova_db PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
+target_link_libraries(nova_db novadb_core stdc++fs)
