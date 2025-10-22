@@ -1,0 +1,12 @@
+WAL recovery complete. Log file removed.
+[2J[HDatabase 'test_wrong_syntax.db' opened successfully.
+For more information or help, type .help
+Unrecognized command or SQL statement: CREATE TABLE missing_paren (id INT, name TEXT;
+Parsed INSERT statement for table: users, values: 
+Error executing INSERT statement: Error: Table 'users' not found.
+Unrecognized command or SQL statement: SELECT FROM users;
+Error executing UPDATE statement: Error: Table 'users' not found.
+Parsed DELETE statement for table: users
+Error executing DELETE statement: Error: Table 'users' not found.
+Unrecognized command or SQL statement: FOOBAR;
+Goodbye from NovaDB.

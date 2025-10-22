@@ -1,0 +1,34 @@
+WAL recovery complete. Log file removed.
+[2J[HDatabase 'test_edge_cases.db' opened successfully.
+For more information or help, type .help
+Table 'test_table' schema stored.
+Parsed INSERT statement for table: test_table, values: 
+Record inserted into table 'test_table' on page 2.
+Inserted into index: key='1', page=2
+Parsed SELECT statement for table: test_table
+id | name
+---|- ----
+Using index for lookup. Found record on page: 2
+1 | 
+Parsed SELECT statement for table: non_existent_table
+Error executing SELECT statement: Error: Table 'non_existent_table' not found.
+Updated 0 rows in table 'test_table'.
+Parsed SELECT statement for table: test_table
+id | name
+---|- ----
+1 | 
+Parsed DELETE statement for table: test_table, WHERE condition: column_name=id, op=0, value=99
+Deleted 0 rows from table 'test_table'.
+Parsed SELECT statement for table: test_table
+id | name
+---|- ----
+1 | 
+Parsed INSERT statement for table: test_table, values: 
+Record inserted into table 'test_table' on page 3.
+Inserted into index: key='2', page=3
+Parsed SELECT statement for table: test_table
+id | name
+---|- ----
+Using index for lookup. Found record on page: 3
+2 | Robert'); DROP TABLE test_table;--
+Goodbye from NovaDB.

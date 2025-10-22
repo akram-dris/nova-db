@@ -1,0 +1,33 @@
+WAL recovery complete. Log file removed.
+[2J[HDatabase 'test_crud.db' opened successfully.
+For more information or help, type .help
+Table 'users' schema stored.
+Parsed INSERT statement for table: users, values: 
+Record inserted into table 'users' on page 2.
+Inserted into index: key='1', page=2
+Parsed INSERT statement for table: users, values: 
+Record inserted into table 'users' on page 3.
+Inserted into index: key='2', page=3
+Parsed SELECT statement for table: users
+id | name | email
+---|- -----|- -----
+1 | Alice | alice@example.com
+2 | Bob | bob@example.com
+Using index for UPDATE. Found record on page: 2
+Updated 1 rows in table 'users'.
+Parsed SELECT statement for table: users
+id | name | email
+---|- -----|- -----
+Using index for lookup. Found record on page: 2
+1 | Alicia | alice@example.com
+Parsed DELETE statement for table: users, WHERE condition: column_name=id, op=0, value=2
+Using index for DELETE. Found record on page: 3
+DEBUG: Index::remove - Before erase: keys=2, record_pointers=2
+DEBUG: Index::remove - After erase: keys=1, record_pointers=1
+Removed from index: key='2'
+Deleted 1 rows from table 'users'.
+Parsed SELECT statement for table: users
+id | name | email
+---|- -----|- -----
+1 | Alicia | alice@example.com
+Goodbye from NovaDB.
