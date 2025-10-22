@@ -17,9 +17,10 @@
 std::shared_ptr<Pager> current_pager = nullptr;
 std::unique_ptr<Index> current_index = nullptr; // Add Index instance
 ThreadPool thread_pool(std::thread::hardware_concurrency()); // Global ThreadPool instance
+std::string current_db_name = "nova"; // Global variable for current database name
 
 void print_prompt() {
-    std::cout << "nova> ";
+    std::cout << current_db_name << "> ";
 }
 
 // Helper function to display a row
@@ -42,6 +43,22 @@ int main() {
     std::stringstream piped_input_buffer;
     if (!is_interactive) {
         piped_input_buffer << std::cin.rdbuf();
+    }
+
+    if (is_interactive) {
+        // Clear screen
+        std::cout << "\033[2J\033[H";
+        // Display NovaDB banner
+        std::cout << " _______           __         " << std::endl;
+        std::cout << "|   |   |.---.-.--|  |.-----. " << std::endl;
+        std::cout << "|       ||  _  |  _  ||  _  | " << std::endl;
+        std::cout << "|__|_|__||___._|_____||   __| " << std::endl;
+        std::cout << "                     |__|    " << std::endl;
+        std::cout << std::endl;
+        std::cout << "Welcome to NovaDB CLI!" << std::endl;
+        std::cout << "Start by opening a database: .open <filename.db>" << std::endl;
+        std::cout << "Type .help for a list of commands." << std::endl;
+        std::cout << std::endl;
     }
 
     while (true) {
@@ -73,10 +90,39 @@ int main() {
                 // For now, assume index root is always page 0 (or some fixed page)
                 // If it's a new DB, root_page_num will be -1, and Index constructor will create it.
                 current_index = std::make_unique<Index>(current_pager, INDEX_ROOT_PAGE_NUM); // Use INDEX_ROOT_PAGE_NUM
+
+                current_db_name = filename; // Store full filename initially
+
+                // Extract base name without extension for the prompt
+                size_t last_dot_pos = current_db_name.rfind('.');
+                if (last_dot_pos != std::string::npos) {
+                    current_db_name = current_db_name.substr(0, last_dot_pos);
+                }
+
+                // Clear screen and display success message
+                std::cout << "\033[2J\033[H";
                 std::cout << "Database '" << filename << "' opened successfully." << std::endl;
+                std::cout << "For more information or help, type .help" << std::endl;
+
             } catch (const std::exception& e) {
                 std::cerr << "Error opening database: " << e.what() << std::endl;
             }
+        } else if (input_line == ".help") {
+            std::cout << "NovaDB CLI Commands:" << std::endl;
+            std::cout << "  .open <filename.db> - Open or create a database file." << std::endl;
+            std::cout << "  .tables             - List all tables in the current database." << std::endl;
+            std::cout << "  .schema [table_name] - Display the schema of a specific table or all tables." << std::endl;
+            std::cout << "  .help               - Display this help message." << std::endl;
+            std::cout << "  .exit               - Exit the NovaDB CLI." << std::endl;
+            std::cout << "SQL Commands:" << std::endl;
+            std::cout << "  CREATE TABLE <table_name> (<col1> <type1>, ...);" << std::endl;
+            std::cout << "  INSERT INTO <table_name> VALUES (...);" << std::endl;
+            std::cout << "  SELECT * FROM <table_name> [WHERE <condition>];" << std::endl;
+            std::cout << "  UPDATE <table_name> SET <col1> = <val1>, ... [WHERE <condition>];" << std::endl;
+            std::cout << "  DELETE FROM <table_name> [WHERE <condition>];" << std::endl;
+            std::cout << "  BEGIN TRANSACTION;" << std::endl;
+            std::cout << "  COMMIT TRANSACTION;" << std::endl;
+            std::cout << "  ROLLBACK TRANSACTION;" << std::endl;
         } else if (input_line == ".exit") {
             std::cout << "Goodbye from NovaDB." << std::endl;
             break;
