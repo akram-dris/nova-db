@@ -50,7 +50,7 @@ std::unique_ptr<Statement> parse_statement(const std::string& sql) {
     if (!token.empty() && token.back() == ';') {
         token.pop_back();
     }
-    std::cerr << "DEBUG: Parser - First token: '" << token << "'" << std::endl;
+
     if (to_upper(token) == "CREATE") {
         ss >> token;
         if (to_upper(token) == "TABLE") {
@@ -94,9 +94,11 @@ std::unique_ptr<Statement> parse_statement(const std::string& sql) {
         ss >> token;
         if (to_upper(token) == "INTO") {
             ss >> token; // table_name
+
             statement->type = STATEMENT_INSERT;
             statement->insert_statement = std::make_unique<InsertStatement>();
             statement->insert_statement->table_name = token;
+        
 
             // Parse values (e.g., (value1, value2, ...))
             std::string remaining_sql;

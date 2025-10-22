@@ -1,15 +1,22 @@
+#include <sstream>
+#include <unistd.h> // For isatty()
 #include <iostream>
 #include <string>
 #include <fstream>
 #include <memory>
 #include <map>
+#include <vector> // Added for std::vector
+#include <future> // Added for std::future
+#include <algorithm> // Added for std::min
 #include "parser.h"
 #include "pager.h"
 #include "serializer.h"
 #include "index.h" // Include index.h
+#include "thread_pool.h" // Include thread_pool.h
 
 std::shared_ptr<Pager> current_pager = nullptr;
 std::unique_ptr<Index> current_index = nullptr; // Add Index instance
+ThreadPool thread_pool(std::thread::hardware_concurrency()); // Global ThreadPool instance
 
 void print_prompt() {
     std::cout << "nova> ";
@@ -30,18 +37,17 @@ int main() {
     std::string input_line;
     bool transaction_active = false;
 
-    while (true) {
-        print_prompt();
-        if (!std::getline(std::cin, input_line)) {
-            break; // End of input
-        }
+    std::stringstream buffer;
+    buffer << std::cin.rdbuf();
+
+    while (std::getline(buffer, input_line)) {
 
         // Trim whitespace from the input line
-        input_line.erase(0, input_line.find_first_not_of(" 	\n\r\f\v"));
-        input_line.erase(input_line.find_last_not_of(" 	\n\r\f\v") + 1);
+        input_line.erase(0, input_line.find_first_not_of(" \t\n\r\f\v"));
+        input_line.erase(input_line.find_last_not_of(" \t\n\r\f\v") + 1);
 
         // Ignore empty lines and comments
-        std::cerr << "DEBUG: input_line after trim: '" << input_line << "'" << std::endl;
+
         if (input_line.empty() || input_line.rfind("--", 0) == 0) {
             continue;
         }
@@ -76,7 +82,7 @@ int main() {
                 continue;
             }
             std::string table_name_to_find = input_line.substr(7);
-            table_name_to_find.erase(0, table_name_to_find.find_first_not_of(" 	\n\r\f\v"));
+            table_name_to_find.erase(0, table_name_to_find.find_first_not_of(" \t\n\r\f\v"));
 
             try {
                 if (table_name_to_find.empty()) { // Display all schemas
@@ -127,11 +133,13 @@ int main() {
                     std::cerr << "Error creating table: " << e.what() << std::endl;
                 }
             } else if (statement->type == STATEMENT_INSERT) {
-                std::cout << "Parsed INSERT statement for table: " << statement->insert_statement->table_name << ", values: ";
-                for (const auto& val : statement->insert_statement->values) {
-                    std::cout << val << " ";
+                if (!statement->insert_statement) {
+                    std::cerr << "ERROR: INSERT statement is null." << std::endl;
+                    continue;
                 }
+                std::cout << "Parsed INSERT statement for table: " << statement->insert_statement->table_name << ", values: ";
                 std::cout << std::endl;
+
 
                 if (!current_pager) {
                     std::cout << "Error: No database open. Use .open <filename.db>" << std::endl;
@@ -254,112 +262,134 @@ int main() {
                             }
                             display_row(row_values, table_schema.columns);
                         }
-                    } else { // Full table scan
-                        for (int page_num = INDEX_ROOT_PAGE_NUM + 1; page_num < current_pager->get_num_pages(); ++page_num) {
-                            std::vector<char> record_page = current_pager->read_page(page_num);
+                    } else { // Full table scan - Parallelize this part
+                        std::vector<std::future<std::vector<std::vector<std::string>>>> futures;
+                        int num_data_pages = current_pager->get_num_pages() - (INDEX_ROOT_PAGE_NUM + 1);
+                        int num_threads = thread_pool.get_num_threads(); // Assuming get_num_threads() exists
+                        int pages_per_thread = std::max(1, num_data_pages / num_threads);
 
-                            size_t record_read_offset = 0;
-                            int32_t record_size = deserialize_int(record_page, record_read_offset); // Read record size
+                        for (int i = 0; i < num_threads; ++i) {
+                            int start_page = INDEX_ROOT_PAGE_NUM + 1 + i * pages_per_thread;
+                            int end_page = std::min(current_pager->get_num_pages(), start_page + pages_per_thread);
 
-                            bool is_zero_page = true;
-                            // Check if the record_size is 0, which implies a deleted or empty record
-                            if (record_size > 0) {
-                                is_zero_page = false;
-                            }
+                            if (start_page >= end_page) break;
 
-                            if (is_zero_page) {
-                                continue;
-                            }
+                            futures.push_back(thread_pool.enqueue([=, &table_schema, &statement]() {
+                                std::vector<std::vector<std::string>> result_rows;
+                                for (int page_num = start_page; page_num < end_page; ++page_num) {
+                                    std::vector<char> record_page = current_pager->read_page(page_num);
 
-                            std::vector<std::string> row_values;
-                            try {
-                                for (size_t i = 0; i < table_schema.columns.size(); ++i) {
-                                    const auto& col_def = table_schema.columns[i];
-                                    row_values.push_back(deserialize_value(record_page, record_read_offset, string_to_column_type(col_def.type)));
-                                }
-                            } catch (const std::out_of_range& e) {
-                                std::cerr << "Skipping page " << page_num << " due to deserialization error: " << e.what() << std::endl;
-                                continue;
-                            }
+                                    size_t record_read_offset = 0;
+                                    int32_t record_size = deserialize_int(record_page, record_read_offset);
 
-                            bool condition_met = true;
-                            if (statement->select_statement->where_condition) {
-                                condition_met = false;
+                                    if (record_size == 0) {
+                                        continue;
+                                    }
 
-                                const auto& wc = statement->select_statement->where_condition;
-                                int column_index = -1;
-                                for (size_t i = 0; i < table_schema.columns.size(); ++i) {
-                                    if (table_schema.columns[i].name == wc->column_name) {
-                                        column_index = i;
-                                        break;
+                                    std::vector<std::string> row_values;
+                                    try {
+                                        for (size_t col_idx = 0; col_idx < table_schema.columns.size(); ++col_idx) {
+                                            const auto& col_def = table_schema.columns[col_idx];
+                                            row_values.push_back(deserialize_value(record_page, record_read_offset, string_to_column_type(col_def.type)));
+                                        }
+                                    } catch (const std::out_of_range& e) {
+                                        std::cerr << "Skipping page " << page_num << " due to deserialization error: " << e.what() << std::endl;
+                                        continue;
+                                    }
+
+                                    bool condition_met = true;
+                                    if (statement->select_statement->where_condition) {
+                                        condition_met = false;
+
+                                        const auto& wc = statement->select_statement->where_condition;
+                                        int column_index = -1;
+                                        for (size_t col_idx = 0; col_idx < table_schema.columns.size(); ++col_idx) {
+                                            if (table_schema.columns[col_idx].name == wc->column_name) {
+                                                column_index = col_idx;
+                                                break;
+                                            }
+                                        }
+
+                                        if (column_index != -1) {
+                                            const auto& col_def = table_schema.columns[column_index];
+                                            const std::string& record_value = row_values[column_index];
+
+                                            if (wc->op == OP_EQ) {
+                                                if (string_to_column_type(col_def.type) == COLUMN_TYPE_INT) {
+                                                    try {
+                                                        if (std::stoi(record_value) == std::stoi(wc->value)) {
+                                                            condition_met = true;
+                                                        }
+                                                    } catch (const std::exception& e) {
+                                                        std::cerr << "Warning: Type conversion error in WHERE clause for INT comparison: " << e.what() << std::endl;
+                                                    }
+                                                } else if (string_to_column_type(col_def.type) == COLUMN_TYPE_TEXT) {
+                                                    std::string cleaned_wc_value = wc->value;
+                                                    if (cleaned_wc_value.length() >= 2 && cleaned_wc_value.front() == '\'' && cleaned_wc_value.back() == '\'') {
+                                                        cleaned_wc_value = cleaned_wc_value.substr(1, cleaned_wc_value.length() - 2);
+                                                    }
+                                                    if (record_value == cleaned_wc_value) {
+                                                        condition_met = true;
+                                                    }
+                                                }
+                                            } else if (wc->op == OP_GT) {
+                                                if (string_to_column_type(col_def.type) == COLUMN_TYPE_INT) {
+                                                    try {
+                                                        if (std::stoi(record_value) > std::stoi(wc->value)) {
+                                                            condition_met = true;
+                                                        }
+                                                    } catch (const std::exception& e) {
+                                                        std::cerr << "Warning: Type conversion error in WHERE clause for INT comparison: " << e.what() << std::endl;
+                                                    }
+                                                } else if (string_to_column_type(col_def.type) == COLUMN_TYPE_TEXT) {
+                                                    std::string cleaned_wc_value = wc->value;
+                                                    if (cleaned_wc_value.length() >= 2 && cleaned_wc_value.front() == '\'' && cleaned_wc_value.back() == '\'') {
+                                                        cleaned_wc_value = cleaned_wc_value.substr(1, cleaned_wc_value.length() - 2);
+                                                    }
+                                                    if (record_value > cleaned_wc_value) {
+                                                        condition_met = true;
+                                                    }
+                                                }
+                                            } else if (wc->op == OP_LT) {
+                                                if (string_to_column_type(col_def.type) == COLUMN_TYPE_INT) {
+                                                    try {
+                                                        if (std::stoi(record_value) < std::stoi(wc->value)) {
+                                                            condition_met = true;
+                                                        }
+                                                    } catch (const std::exception& e) {
+                                                        std::cerr << "Warning: Type conversion error in WHERE clause for INT comparison: " << e.what() << std::endl;
+                                                    }
+                                                } else if (string_to_column_type(col_def.type) == COLUMN_TYPE_TEXT) {
+                                                    std::string cleaned_wc_value = wc->value;
+                                                    if (cleaned_wc_value.length() >= 2 && cleaned_wc_value.front() == '\'' && cleaned_wc_value.back() == '\'') {
+                                                        cleaned_wc_value = cleaned_wc_value.substr(1, cleaned_wc_value.length() - 2);
+                                                    }
+                                                    if (record_value < cleaned_wc_value) {
+                                                        condition_met = true;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    if (condition_met) {
+                                        result_rows.push_back(row_values);
                                     }
                                 }
+                                return result_rows;
+                            }));
+                        }
 
-                                if (column_index != -1) {
-                                    const auto& col_def = table_schema.columns[column_index];
-                                    const std::string& record_value = row_values[column_index];
+                        // Aggregate results from all futures
+                        std::vector<std::vector<std::string>> all_result_rows;
+                        for (auto& future : futures) {
+                            std::vector<std::vector<std::string>> thread_rows = future.get();
+                            all_result_rows.insert(all_result_rows.end(), thread_rows.begin(), thread_rows.end());
+                        }
 
-                                    if (wc->op == OP_EQ) {
-                                        if (string_to_column_type(col_def.type) == COLUMN_TYPE_INT) {
-                                            try {
-                                                if (std::stoi(record_value) == std::stoi(wc->value)) {
-                                                    condition_met = true;
-                                                }
-                                            } catch (const std::exception& e) {
-                                                std::cerr << "Warning: Type conversion error in WHERE clause for INT comparison: " << e.what() << std::endl;
-                                            }
-                                        } else if (string_to_column_type(col_def.type) == COLUMN_TYPE_TEXT) {
-                                            std::string cleaned_wc_value = wc->value;
-                                            if (cleaned_wc_value.length() >= 2 && cleaned_wc_value.front() == '\'' && cleaned_wc_value.back() == '\'') {
-                                                cleaned_wc_value = cleaned_wc_value.substr(1, cleaned_wc_value.length() - 2);
-                                            }
-                                            if (record_value == cleaned_wc_value) {
-                                                condition_met = true;
-                                            }
-                                        }
-                                    } else if (wc->op == OP_GT) {
-                                        if (string_to_column_type(col_def.type) == COLUMN_TYPE_INT) {
-                                            try {
-                                                if (std::stoi(record_value) > std::stoi(wc->value)) {
-                                                    condition_met = true;
-                                                }
-                                            } catch (const std::exception& e) {
-                                                std::cerr << "Warning: Type conversion error in WHERE clause for INT comparison: " << e.what() << std::endl;
-                                            }
-                                        } else if (string_to_column_type(col_def.type) == COLUMN_TYPE_TEXT) {
-                                            std::string cleaned_wc_value = wc->value;
-                                            if (cleaned_wc_value.length() >= 2 && cleaned_wc_value.front() == '\'' && cleaned_wc_value.back() == '\'') {
-                                                cleaned_wc_value = cleaned_wc_value.substr(1, cleaned_wc_value.length() - 2);
-                                            }
-                                            if (record_value > cleaned_wc_value) {
-                                                condition_met = true;
-                                            }
-                                        }
-                                    } else if (wc->op == OP_LT) {
-                                        if (string_to_column_type(col_def.type) == COLUMN_TYPE_INT) {
-                                            try {
-                                                if (std::stoi(record_value) < std::stoi(wc->value)) {
-                                                    condition_met = true;
-                                                }
-                                            } catch (const std::exception& e) {
-                                                std::cerr << "Warning: Type conversion error in WHERE clause for INT comparison: " << e.what() << std::endl;
-                                            }
-                                        } else if (string_to_column_type(col_def.type) == COLUMN_TYPE_TEXT) {
-                                            std::string cleaned_wc_value = wc->value;
-                                            if (cleaned_wc_value.length() >= 2 && cleaned_wc_value.front() == '\'' && cleaned_wc_value.back() == '\'') {
-                                                cleaned_wc_value = cleaned_wc_value.substr(1, cleaned_wc_value.length() - 2);
-                                            }
-                                            if (record_value < cleaned_wc_value) {
-                                                condition_met = true;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            if (condition_met) {
-                                display_row(row_values, table_schema.columns);
-                            }
+                        // Display aggregated results
+                        for (const auto& row_values : all_result_rows) {
+                            display_row(row_values, table_schema.columns);
                         }
                     }
 
@@ -771,11 +801,13 @@ int main() {
                 else {
                     current_pager->rollback_transaction();
                     transaction_active = false;
-                    std::cout << "Transaction rolled back." << std::endl;
                 }
             } else {
                 std::cout << "Unrecognized command or SQL statement: " << input_line << std::endl;
             }
+        }
+        if (isatty(STDIN_FILENO)) {
+            print_prompt();
         }
     }
 

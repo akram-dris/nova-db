@@ -6,6 +6,7 @@
 #include <fstream>
 #include <memory>
 #include <map>
+#include <mutex>
 
 class WriteAheadLog; // Forward declaration
 
@@ -49,6 +50,7 @@ private:
     int num_pages_;
     std::unique_ptr<WriteAheadLog> wal_;
     std::map<std::string, TableSchema> schemas_;
+    mutable std::mutex mutex_;
 };
 
 #endif //NOVADB_PAGER_H

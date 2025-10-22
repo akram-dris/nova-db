@@ -5,6 +5,7 @@
 #include <iostream> // Added for std::cerr and std::cout
 #include <map> // For std::map
 #include <cstring> // For std::memcpy
+#include <mutex> // For std::mutex
 
 namespace fs = std::filesystem;
 
@@ -21,35 +22,58 @@ struct WalReadRecord {
 
 // Helper functions for serialization/deserialization
 namespace {
-    void serialize_string(std::vector<char>& buffer, const std::string& s) {
+    void serialize_string(std::vector<char>& buffer, size_t& offset, const std::string& s) {
         size_t len = s.length();
-        buffer.insert(buffer.end(), reinterpret_cast<const char*>(&len), reinterpret_cast<const char*>(&len) + sizeof(len));
-        buffer.insert(buffer.end(), s.begin(), s.end());
+        if (offset + sizeof(len) > PAGE_SIZE) {
+            throw std::runtime_error("Buffer overflow during string length serialization.");
+        }
+        std::memcpy(buffer.data() + offset, &len, sizeof(len));
+        offset += sizeof(len);
+
+        if (offset + len > PAGE_SIZE) {
+            throw std::runtime_error("Buffer overflow during string data serialization.");
+        }
+        std::memcpy(buffer.data() + offset, s.data(), len);
+        offset += len;
     }
 
     std::string deserialize_string(const std::vector<char>& buffer, size_t& offset) {
         size_t len;
+        if (offset + sizeof(len) > PAGE_SIZE) {
+            throw std::runtime_error("Buffer underflow during string length deserialization.");
+        }
         std::memcpy(&len, buffer.data() + offset, sizeof(len));
         offset += sizeof(len);
+
+        if (offset + len > PAGE_SIZE) {
+            throw std::runtime_error("Buffer underflow during string data deserialization.");
+        }
         std::string s(buffer.data() + offset, len);
         offset += len;
         return s;
     }
 
-    void serialize_int(std::vector<char>& buffer, int val) {
-        buffer.insert(buffer.end(), reinterpret_cast<const char*>(&val), reinterpret_cast<const char*>(&val) + sizeof(val));
+    void serialize_int(std::vector<char>& buffer, size_t& offset, int val) {
+        if (offset + sizeof(val) > PAGE_SIZE) {
+            throw std::runtime_error("Buffer overflow during int serialization.");
+        }
+        std::memcpy(buffer.data() + offset, &val, sizeof(val));
+        offset += sizeof(val);
     }
 
     int deserialize_int(const std::vector<char>& buffer, size_t& offset) {
         int val;
+        if (offset + sizeof(val) > PAGE_SIZE) {
+            throw std::runtime_error("Buffer underflow during int deserialization.");
+        }
         std::memcpy(&val, buffer.data() + offset, sizeof(val));
         offset += sizeof(val);
         return val;
     }
 
-    void serialize_column(std::vector<char>& buffer, const Column& col) {
-        serialize_string(buffer, col.name);
-        serialize_string(buffer, col.type);
+    void serialize_column(std::vector<char>& buffer, size_t& offset, const Column& col) {
+        serialize_string(buffer, offset, col.name);
+        serialize_string(buffer, offset, col.type);
     }
 
     Column deserialize_column(const std::vector<char>& buffer, size_t& offset) {
@@ -59,12 +83,12 @@ namespace {
         return col;
     }
 
-    void serialize_table_schema(std::vector<char>& buffer, const TableSchema& schema) {
-        serialize_string(buffer, schema.table_name);
-        serialize_int(buffer, schema.root_page_num);
-        serialize_int(buffer, schema.columns.size());
+    void serialize_table_schema(std::vector<char>& buffer, size_t& offset, const TableSchema& schema) {
+        serialize_string(buffer, offset, schema.table_name);
+        serialize_int(buffer, offset, schema.root_page_num);
+        serialize_int(buffer, offset, schema.columns.size());
         for (const auto& col : schema.columns) {
-            serialize_column(buffer, col);
+            serialize_column(buffer, offset, col);
         }
     }
 
@@ -112,17 +136,35 @@ Pager::~Pager() {
 }
 
 std::vector<char> Pager::read_page(int page_num) {
+    std::lock_guard<std::mutex> lock(mutex_); // Protect access to file_stream_ and num_pages_
     if (page_num < 0 || page_num >= num_pages_) {
         throw std::out_of_range("Page number out of range");
     }
 
     std::vector<char> page_data(PAGE_SIZE);
     file_stream_.seekg(page_num * PAGE_SIZE);
-    file_stream_.read(page_data.data(), PAGE_SIZE);
+
+    // Check if there are enough bytes to read PAGE_SIZE
+    long current_pos = file_stream_.tellg();
+    file_stream_.seekg(0, std::ios::end);
+    long file_size = file_stream_.tellg();
+    file_stream_.seekg(current_pos); // Restore position
+
+    if (current_pos + PAGE_SIZE > file_size) {
+        // If not enough bytes, read only available bytes and fill rest with zeros
+        file_stream_.read(page_data.data(), file_size - current_pos);
+        // Fill the rest of the page with zeros
+        std::fill(page_data.begin() + (file_size - current_pos), page_data.end(), 0);
+    } else {
+        file_stream_.read(page_data.data(), PAGE_SIZE);
+    }
+
     return page_data;
 }
 
 void Pager::write_page(int page_num, const std::vector<char>& data, bool log_update) {
+    // Caller is responsible for locking the mutex.
+    // std::lock_guard<std::mutex> lock(mutex_); // Removed to prevent deadlock
     if (page_num < 0) {
         throw std::out_of_range("Page number out of range");
     }
@@ -131,18 +173,20 @@ void Pager::write_page(int page_num, const std::vector<char>& data, bool log_upd
     }
 
     std::vector<char> old_page_data(PAGE_SIZE);
-    if (log_update) {
-        // Read old page data before writing new data
-        if (page_num < num_pages_) { // Only read if page already exists
-            file_stream_.seekg(page_num * PAGE_SIZE);
-            file_stream_.read(old_page_data.data(), PAGE_SIZE);
-        } else {
-            // If it's a new page, old_page_data is all zeros (default constructed)
-            // This is fine, as it represents an empty page before the write.
-        }
-        wal_->log_update(page_num, data, old_page_data); // Log the update with old and new data
-    }
+            if (log_update) {
+                // Read old page data before writing new data
+                if (page_num < num_pages_) { // Only read if page already exists
+                    file_stream_.seekg(page_num * PAGE_SIZE);
+                    file_stream_.read(old_page_data.data(), PAGE_SIZE);
+                } else {
+                    // If it's a new page, old_page_data is all zeros (default constructed)
+                    // This is fine, as it represents an empty page before the write.
+                }
 
+
+                wal_->log_update(page_num, data, old_page_data); // Log the update with old and new data
+
+            }
     if (page_num >= num_pages_) {
         // If writing to a new page, extend the file
         file_stream_.seekp(page_num * PAGE_SIZE);
@@ -150,11 +194,16 @@ void Pager::write_page(int page_num, const std::vector<char>& data, bool log_upd
     } else {
         file_stream_.seekp(page_num * PAGE_SIZE);
     }
+
     file_stream_.write(data.data(), PAGE_SIZE);
+
+
     file_stream_.flush(); // Ensure data is written to disk
+
 }
 
 int Pager::get_num_pages() const {
+    std::lock_guard<std::mutex> lock(mutex_); // Protect access to num_pages_
     return num_pages_;
 }
 
@@ -167,11 +216,19 @@ void Pager::begin_transaction() {
 }
 
 void Pager::commit_transaction() {
-    wal_->log_transaction_event(wal_->get_current_transaction_id(), LogRecordType::COMMIT_TXN);
-    wal_->commit();
+    if (wal_) {
+        wal_->log_transaction_event(wal_->get_current_transaction_id(), LogRecordType::COMMIT_TXN);
+        wal_->commit();
+        wal_.reset(); // Reset the WAL object
+    }
 }
 
 void Pager::rollback_transaction() {
+    if (!wal_) {
+        std::cerr << "Error: No active transaction to rollback." << std::endl;
+        return;
+    }
+
     std::string wal_filename = filename_ + ".wal";
     if (!fs::exists(wal_filename)) {
         std::cerr << "Error: No WAL file found for rollback." << std::endl;
@@ -219,10 +276,12 @@ void Pager::rollback_transaction() {
 
     wal_->log_transaction_event(current_txn_id, LogRecordType::ROLLBACK_TXN);
     wal_->clear_log_records(); // This will clear the WAL file
+    wal_.reset(); // Reset the WAL object
     std::cout << "Transaction rolled back. WAL file removed." << std::endl;
 }
 
 void Pager::recover() {
+    std::lock_guard<std::mutex> lock(mutex_); // Protect internal state during recovery
     std::string wal_filename = filename_ + ".wal";
     if (!fs::exists(wal_filename)) {
         return;
@@ -248,15 +307,15 @@ void Pager::recover() {
         wal_file_stream.read(reinterpret_cast<char*>(&transaction_id), sizeof(transaction_id));
         if (type == UPDATE) {
             if (!wal_file_stream.read(reinterpret_cast<char*>(&page_num), sizeof(page_num))) {
-                std::cerr << "Error during WAL recovery: Could not read page_num." << std::endl;
+                std::cerr << "Error during WAL recovery: Could not read page_num. WAL file might be corrupted or incomplete." << std::endl;
                 break;
             }
             if (!wal_file_stream.read(new_page_data.data(), PAGE_SIZE)) {
-                std::cerr << "Error during WAL recovery: Could not read new_page_data for page " << page_num << std::endl;
+                std::cerr << "Error during WAL recovery: Could not read new_page_data for page " << page_num << ". WAL file might be corrupted or incomplete." << std::endl;
                 break;
             }
             if (!wal_file_stream.read(old_page_data.data(), PAGE_SIZE)) {
-                std::cerr << "Error during WAL recovery: Could not read old_page_data for page " << page_num << std::endl;
+                std::cerr << "Error during WAL recovery: Could not read old_page_data for page " << page_num << ". WAL file might be corrupted or incomplete." << std::endl;
                 break;
             }
 
@@ -292,12 +351,15 @@ void Pager::recover() {
     }
 
     wal_file_stream.close();
-    // fs::remove(wal_filename); // REMOVED THIS LINE
+    fs::remove(wal_filename);
     std::cout << "WAL recovery complete. Log file removed." << std::endl;
 }
 
 void Pager::load_schemas() {
+    std::lock_guard<std::mutex> lock(mutex_); // Protect access to schemas_
+
     if (num_pages_ <= METADATA_PAGE_NUM) {
+
         // No metadata page yet, so no schemas to load
         return;
     }
@@ -307,37 +369,61 @@ void Pager::load_schemas() {
 
     // Read number of schemas
     int num_schemas = deserialize_int(metadata_page, offset);
+
     for (int i = 0; i < num_schemas; ++i) {
         TableSchema schema = deserialize_table_schema(metadata_page, offset);
         schemas_[schema.table_name] = schema;
+
     }
 }
 
 void Pager::save_schemas() {
-    std::vector<char> buffer;
-    serialize_int(buffer, schemas_.size()); // Number of schemas
+    std::lock_guard<std::mutex> lock(mutex_); // Protect access to schemas_
 
-    for (const auto& pair : schemas_) {
-        serialize_table_schema(buffer, pair.second);
+    std::vector<char> buffer(PAGE_SIZE, 0); // Pre-allocate buffer to PAGE_SIZE
+    size_t offset = 0; // Use offset for serialization
+
+    try {
+
+        serialize_int(buffer, offset, schemas_.size()); // Number of schemas
+
+
+        for (const auto& pair : schemas_) {
+
+            serialize_table_schema(buffer, offset, pair.second);
+
+        }
+
+
+        write_page(METADATA_PAGE_NUM, buffer, true); // Log this update
+
+    } catch (const std::exception& e) {
+        std::cerr << "ERROR: Crash during schema serialization/saving: " << e.what() << std::endl;
+        // Re-throw to indicate a critical error
+        throw;
     }
-
-    // Pad with zeros to fill the page
-    buffer.resize(PAGE_SIZE, 0);
-    write_page(METADATA_PAGE_NUM, buffer, true); // Log this update
 }
 
 const TableSchema& Pager::get_table_schema(const std::string& table_name) const {
+    std::lock_guard<std::mutex> lock(mutex_); // Protect access to schemas_
+
     auto it = schemas_.find(table_name);
     if (it == schemas_.end()) {
+
         throw std::runtime_error("Error: Table '" + table_name + "' not found.");
     }
+
     return it->second;
 }
 
 const std::map<std::string, TableSchema>& Pager::get_all_schemas() const {
+    std::lock_guard<std::mutex> lock(mutex_); // Protect access to schemas_
+
     return schemas_;
 }
 
 void Pager::add_schema(const TableSchema& schema) {
+    std::lock_guard<std::mutex> lock(mutex_); // Protect access to schemas_
+
     schemas_[schema.table_name] = schema;
 }

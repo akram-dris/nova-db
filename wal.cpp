@@ -12,7 +12,7 @@ WriteAheadLog::WriteAheadLog(const std::string& db_filename) : current_transacti
     } else {
         log_filename_ = db_filename + ".wal";
     }
-    log_file_stream_.open(log_filename_, std::ios::out | std::ios::binary | std::ios::app); // Open in append mode
+    log_file_stream_.open(log_filename_, std::ios::out | std::ios::binary | std::ios::trunc); // Open in truncate mode to ensure a fresh WAL file
     if (!log_file_stream_.is_open()) {
         throw std::runtime_error("Could not open or create WAL file: " + log_filename_);
     }
@@ -34,13 +34,21 @@ uint32_t WriteAheadLog::get_current_transaction_id() const {
 }
 
 void WriteAheadLog::log_update(int page_num, const std::vector<char>& new_page_data, const std::vector<char>& old_page_data) {
+
     LogRecordType type = UPDATE;
+
     log_file_stream_.write(reinterpret_cast<const char*>(&type), sizeof(type));
+
     log_file_stream_.write(reinterpret_cast<const char*>(&current_transaction_id_), sizeof(current_transaction_id_));
+
     log_file_stream_.write(reinterpret_cast<const char*>(&page_num), sizeof(page_num));
+
     log_file_stream_.write(new_page_data.data(), PAGE_SIZE);
+
     log_file_stream_.write(old_page_data.data(), PAGE_SIZE);
+
     log_file_stream_.flush();
+
 }
 
 void WriteAheadLog::log_transaction_event(uint32_t transaction_id, LogRecordType type) {
