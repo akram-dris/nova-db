@@ -329,24 +329,24 @@ std::unique_ptr<Statement> parse_statement(const std::string& sql) {
             statement->begin_transaction_statement = std::make_unique<BeginTransactionStatement>();
         }
     } else if (to_upper(token) == "COMMIT") {
-        std::string remaining_sql;
-        std::getline(ss, remaining_sql);
-        remaining_sql = trim(remaining_sql);
-        if (!remaining_sql.empty() && remaining_sql.back() == ';') {
-            remaining_sql.pop_back();
+        std::string next_token;
+        ss >> next_token;
+        next_token = trim(next_token);
+        if (!next_token.empty() && next_token.back() == ';') {
+            next_token.pop_back();
         }
-        if (remaining_sql.empty()) { // COMMIT statement should have no other tokens
+        if (to_upper(next_token) == "TRANSACTION" || next_token.empty()) { // Allow "COMMIT" or "COMMIT TRANSACTION"
             statement->type = STATEMENT_COMMIT_TRANSACTION;
             statement->commit_transaction_statement = std::make_unique<CommitTransactionStatement>();
         }
     } else if (to_upper(token) == "ROLLBACK") {
-        std::string remaining_sql;
-        std::getline(ss, remaining_sql);
-        remaining_sql = trim(remaining_sql);
-        if (!remaining_sql.empty() && remaining_sql.back() == ';') {
-            remaining_sql.pop_back();
+        std::string next_token;
+        ss >> next_token;
+        next_token = trim(next_token);
+        if (!next_token.empty() && next_token.back() == ';') {
+            next_token.pop_back();
         }
-        if (remaining_sql.empty()) { // ROLLBACK statement should have no other tokens
+        if (to_upper(next_token) == "TRANSACTION" || next_token.empty()) { // Allow "ROLLBACK" or "ROLLBACK TRANSACTION"
             statement->type = STATEMENT_ROLLBACK_TRANSACTION;
             statement->rollback_transaction_statement = std::make_unique<RollbackTransactionStatement>();
         }

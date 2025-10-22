@@ -37,10 +37,23 @@ int main() {
     std::string input_line;
     bool transaction_active = false;
 
-    std::stringstream buffer;
-    buffer << std::cin.rdbuf();
+    bool is_interactive = isatty(STDIN_FILENO);
 
-    while (std::getline(buffer, input_line)) {
+    std::stringstream piped_input_buffer;
+    if (!is_interactive) {
+        piped_input_buffer << std::cin.rdbuf();
+    }
+
+    while (true) {
+        if (is_interactive) {
+            if (!std::getline(std::cin, input_line)) {
+                break; // EOF or error
+            }
+        } else {
+            if (!std::getline(piped_input_buffer, input_line)) {
+                break; // EOF or error from piped input
+            }
+        }
 
         // Trim whitespace from the input line
         input_line.erase(0, input_line.find_first_not_of(" \t\n\r\f\v"));
