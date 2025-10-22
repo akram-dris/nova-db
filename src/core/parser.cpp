@@ -70,23 +70,32 @@ std::unique_ptr<Statement> parse_statement(const std::string& sql) {
                 remaining_sql = trim(remaining_sql);
             }
 
-            if (remaining_sql.length() > 2 && remaining_sql.front() == '(' && remaining_sql.back() == ')') {
-                std::string columns_str = remaining_sql.substr(1, remaining_sql.length() - 2);
-                std::stringstream cols_ss(columns_str);
-                std::string col_token;
+            // Check for valid column definition format: must start with '(' and end with ')'
+            if (!(remaining_sql.length() > 2 && remaining_sql.front() == '(' && remaining_sql.back() == ')')) {
+                // Syntax error: Malformed column definitions
+                statement->type = STATEMENT_UNKNOWN;
+                return statement; // Return early with UNKNOWN statement type
+            }
 
-                while (std::getline(cols_ss, col_token, ',')) {
-                    std::stringstream col_def_ss(trim(col_token));
-                    std::string col_name;
-                    std::string col_type_str;
-                    col_def_ss >> col_name >> col_type_str;
+            std::string columns_str = remaining_sql.substr(1, remaining_sql.length() - 2);
+            std::stringstream cols_ss(columns_str);
+            std::string col_token;
 
-                    if (!col_name.empty() && !col_type_str.empty()) {
-                        ColumnDefinition col_def;
-                        col_def.name = col_name;
-                        col_def.type = string_to_column_type(col_type_str);
-                        statement->create_table_statement->columns.push_back(col_def);
-                    }
+            while (std::getline(cols_ss, col_token, ',')) {
+                std::stringstream col_def_ss(trim(col_token));
+                std::string col_name;
+                std::string col_type_str;
+                col_def_ss >> col_name >> col_type_str;
+
+                if (!col_name.empty() && !col_type_str.empty()) {
+                    ColumnDefinition col_def;
+                    col_def.name = col_name;
+                    col_def.type = string_to_column_type(col_type_str);
+                    statement->create_table_statement->columns.push_back(col_def);
+                } else {
+                    // Syntax error: Malformed column definition within parentheses
+                    statement->type = STATEMENT_UNKNOWN;
+                    return statement; // Return early with UNKNOWN statement type
                 }
             }
         }
