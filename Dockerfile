@@ -9,8 +9,6 @@ RUN apt-get update && \
     apt-get install -y \
     build-essential \
     cmake \
-    qtbase5-dev \
-    libqt5widgets5 \
     git \
     && rm -rf /var/lib/apt/lists/*
 
